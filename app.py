@@ -166,3 +166,104 @@ if st.button("Actualizar Histórico"):
         file_name="historico_actualizado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+# ==========================================================
+# SECCIÓN 9 - FICHA INDIVIDUAL PDF
+# ==========================================================
+
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase import pdfmetrics
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+import matplotlib.pyplot as plt
+import tempfile
+
+def seconds_to_hhmm(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    return f"{h}h {m}min"
+
+st.subheader("📄 Generar Ficha Individual")
+
+selected_athlete = st.selectbox("Seleccionar atleta", df["Nombre"].unique())
+
+if st.button("Generar PDF"):
+
+    atleta_df = df[df["Nombre"] == selected_athlete].iloc[0]
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    title_style = styles["Heading1"]
+
+    # Título
+    elements.append(Paragraph(f"Ficha Individual - {selected_athlete}", title_style))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    # KPIs principales
+    data_kpi = [
+        ["Total Semana", seconds_to_hhmm(atleta_df["total_sec"])],
+        ["Ranking Volumen", int(atleta_df["Rank_Volumen"])],
+        ["% vs Promedio Equipo", atleta_df["%_vs_Team_Avg"]],
+        ["VN (0-1)", atleta_df["VN"]],
+    ]
+
+    table_kpi = Table(data_kpi, colWidths=[200, 150])
+    table_kpi.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+
+    elements.append(table_kpi)
+    elements.append(Spacer(1, 0.4 * inch))
+
+    # Tabla disciplinas
+    data_disc = [
+        ["Disciplina", "Tiempo"],
+        ["Natación", seconds_to_hhmm(atleta_df["swim_sec"])],
+        ["Ciclismo", seconds_to_hhmm(atleta_df["bike_sec"])],
+        ["Trote", seconds_to_hhmm(atleta_df["run_sec"])],
+    ]
+
+    table_disc = Table(data_disc, colWidths=[200, 150])
+    table_disc.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+
+    elements.append(table_disc)
+    elements.append(Spacer(1, 0.4 * inch))
+
+    # Gráfico barras verticales
+    fig, ax = plt.subplots()
+    disciplinas = ["Swim", "Bike", "Run"]
+    valores = [
+        atleta_df["swim_sec"]/3600,
+        atleta_df["bike_sec"]/3600,
+        atleta_df["run_sec"]/3600
+    ]
+    ax.bar(disciplinas, valores)
+    ax.set_ylabel("Horas")
+    ax.set_title("Distribución por Disciplina")
+
+    temp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    plt.savefig(temp_img.name)
+    plt.close(fig)
+
+    elements.append(Image(temp_img.name, width=4*inch, height=3*inch))
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    st.download_button(
+        label="⬇ Descargar Ficha PDF",
+        data=buffer,
+        file_name=f"Ficha_{selected_athlete}.pdf",
+        mime="application/pdf"
+    )
