@@ -13,6 +13,8 @@ st.set_page_config(page_title="Club KPI Platform", layout="wide")
 
 st.title("🏊🚴🏃 Club KPI Platform - MVP Volumen")
 
+
+
 # ==========================================================
 # SECCIÓN 1 - FUNCIONES UTILITARIAS (EDITABLE)
 # ==========================================================
@@ -140,9 +142,12 @@ st.subheader("🏃 Ranking Trote")
 st.dataframe(df[df["run_sec"] > 0].sort_values("Rank_Run"))
 
 # ==========================================================
-# SECCIÓN 8 - ACTUALIZAR HISTÓRICO
+# SECCIÓN 8 - ACTUALIZAR HISTÓRICO (VERSIÓN EXTENDIDA)
 # ==========================================================
 
+st.subheader("📚 Gestión de Histórico")
+
+# Cargar histórico si existe
 if historico_file:
     df_hist = pd.read_excel(historico_file)
 else:
@@ -151,14 +156,35 @@ else:
 semana_label = st.text_input("Nombre Semana (ej: 2026-03-01)")
 
 if st.button("Actualizar Histórico"):
-    df_export = df[["Nombre", "total_sec", "VN"]].copy()
+
+    if semana_label == "":
+        st.warning("Debes ingresar un nombre de semana.")
+        st.stop()
+
+    # Exportar todas las métricas necesarias
+    df_export = df[[
+        "Nombre",
+        "total_sec",
+        "swim_sec",
+        "bike_sec",
+        "run_sec",
+        "VN"
+    ]].copy()
+
     df_export["Semana"] = semana_label
 
-    df_final = pd.concat([df_hist, df_export], ignore_index=True)
+    # Concatenar histórico
+    if df_hist.empty:
+        df_final = df_export
+    else:
+        df_final = pd.concat([df_hist, df_export], ignore_index=True)
 
+    # Exportar archivo actualizado
     output = BytesIO()
     df_final.to_excel(output, index=False)
     output.seek(0)
+
+    st.success("Histórico actualizado correctamente.")
 
     st.download_button(
         label="⬇ Descargar Histórico Actualizado",
