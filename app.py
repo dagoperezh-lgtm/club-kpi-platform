@@ -246,6 +246,42 @@ st.subheader("🏃 Ranking Trote")
 st.dataframe(df[df["run_sec"] > 0].sort_values("Rank_Run"))
 
 # ==========================================================
+# SECCIÓN 7B - REPORTE GLOBAL CLUB
+# ==========================================================
+
+st.subheader("📊 Reporte Global del Club")
+
+total_club = df["total_sec"].sum()
+promedio_club = df["total_sec"].mean()
+
+total_swim = df["swim_sec"].sum()
+total_bike = df["bike_sec"].sum()
+total_run = df["run_sec"].sum()
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Volumen Total Club", f"{round(total_club/3600,1)} h")
+col2.metric("Promedio por Atleta", f"{round(promedio_club/3600,1)} h")
+col3.metric("Total Atletas", len(df))
+
+st.write("### Distribución por Disciplina (Club)")
+
+disc_df = pd.DataFrame({
+    "Disciplina": ["Natación","Ciclismo","Trote"],
+    "Horas": [
+        total_swim/3600,
+        total_bike/3600,
+        total_run/3600
+    ]
+})
+
+st.bar_chart(disc_df.set_index("Disciplina"))
+
+st.write("### 🏆 Top 3 Volumen")
+
+top3 = df.sort_values("total_sec", ascending=False).head(3)
+st.dataframe(top3[["Nombre","total_sec","VN","Rank_Volumen"]])
+# ==========================================================
 # SECCIÓN 8 - ACTUALIZAR HISTÓRICO (VERSIÓN EXTENDIDA)
 # ==========================================================
 
