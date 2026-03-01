@@ -142,6 +142,78 @@ if plan_file:
     df["Rank_Adherencia"] = df["Adherencia"].rank(
         ascending=False, method="min"
     )
+
+# ==========================================================
+# SECCIÓN 4C - CONVERSIÓN AUTOMÁTICA PLAN A MODELO GLOBAL
+# (con +3h Natación obligatorias)
+# ==========================================================
+
+def clasificar_disciplina(texto):
+    if pd.isna(texto):
+        return None
+    
+    texto = str(texto).lower()
+    
+    if "trote" in texto or "run" in texto:
+        return "Trote"
+    elif "rodillo" in texto or "cicl" in texto or "bike" in texto:
+        return "Ciclismo"
+    elif "nat" in texto or "nado" in texto:
+        return "Natación"
+    elif "descanso" in texto:
+        return None
+    else:
+        return None
+
+if plan_file:
+
+    plan_original = pd.read_excel(plan_file)
+
+    # Detectar filas clave
+    fila_actividad = plan_original[
+        plan_original.iloc[:,0].str.contains("Actividad", case=False, na=False)
+    ].index[0]
+
+    fila_duracion = plan_original[
+        plan_original.iloc[:,0].str.contains("Duración", case=False, na=False)
+    ].index[0]
+
+    actividades = plan_original.iloc[fila_actividad, 1:8]
+    duraciones = plan_original.iloc[fila_duracion, 1:8]
+
+    dias = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+
+    plan_convertido = {
+        "Natación": [0]*7,
+        "Ciclismo": [0]*7,
+        "Trote": [0]*7
+    }
+
+    # Clasificación automática
+    for i in range(7):
+        disciplina = clasificar_disciplina(actividades.iloc[i])
+        tiempo_sec = time_to_seconds(duraciones.iloc[i])
+        
+        if disciplina in plan_convertido:
+            plan_convertido[disciplina][i] += tiempo_sec
+
+    # 🔵 AGREGAR 3H NATACIÓN EN 3 DÍAS (distribución automática)
+    horas_extra_natacion = 3 * 3600
+    sesiones_natacion = 3
+    tiempo_por_sesion = horas_extra_natacion // sesiones_natacion
+
+    dias_para_natacion = [0, 2, 4]  # Lunes, Miércoles, Viernes
+
+    for d in dias_para_natacion:
+        plan_convertido["Natación"][d] += tiempo_por_sesion
+
+    # Crear DataFrame oficial
+    df_plan_global = pd.DataFrame(plan_convertido, index=dias).T
+
+    plan_total_sec = df_plan_global.sum().sum()
+
+    st.subheader("📋 Plan Global Convertido (+3h Natación)")
+    st.dataframe(df_plan_global)
     
 # ==========================================================
 # SECCIÓN 5 - RANKING POR DISCIPLINA
