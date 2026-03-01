@@ -473,3 +473,71 @@ if st.button("Generar PDF", key="btn_pdf"):
         file_name=f"Ficha_{selected_athlete}.pdf",
         mime="application/pdf"
     )
+
+# ==========================================================
+# SECCIÓN 10 - REPORTE SEMANAL WORD
+# ==========================================================
+
+from docx import Document
+from docx.shared import Pt
+from datetime import datetime
+
+st.subheader("📝 Generar Reporte Semanal Word")
+
+semana_reporte = st.text_input("Número o nombre de semana", key="semana_word")
+
+if st.button("Generar Reporte Word", key="btn_word"):
+
+    doc = Document()
+    doc.add_heading(f"Reporte Semanal Club TYM - Semana {semana_reporte}", level=1)
+
+    total_deportistas = len(df)
+    total_horas = df["total_sec"].sum() / 3600
+    triatletas_completos = len(df[(df["swim_sec"]>0) & (df["bike_sec"]>0) & (df["run_sec"]>0)])
+
+    doc.add_heading("Resumen General", level=2)
+    doc.add_paragraph(f"Total deportistas registrados: {total_deportistas}")
+    doc.add_paragraph(f"Triatletas completos: {triatletas_completos}")
+    doc.add_paragraph(f"Horas totales del club: {round(total_horas,1)}")
+
+    # TOP 5
+    doc.add_heading("TOP 5 TIEMPO GENERAL", level=2)
+
+    top5 = df.sort_values("total_sec", ascending=False).head(5)
+
+    table = doc.add_table(rows=1, cols=5)
+    hdr = table.rows[0].cells
+    hdr[0].text = "Nombre"
+    hdr[1].text = "Total"
+    hdr[2].text = "Natación"
+    hdr[3].text = "Ciclismo"
+    hdr[4].text = "Trote"
+
+    for _, row in top5.iterrows():
+        row_cells = table.add_row().cells
+        row_cells[0].text = row["Nombre"]
+        row_cells[1].text = seconds_to_hhmm(row["total_sec"])
+        row_cells[2].text = seconds_to_hhmm(row["swim_sec"])
+        row_cells[3].text = seconds_to_hhmm(row["bike_sec"])
+        row_cells[4].text = seconds_to_hhmm(row["run_sec"])
+
+    # Insight automático simple
+    lider = top5.iloc[0]["Nombre"]
+
+    doc.add_heading("Análisis del Podio", level=2)
+    doc.add_paragraph(
+        f"{lider} lidera la semana con el mayor volumen acumulado, "
+        f"marcando la pauta del club en esta edición."
+    )
+
+    # Guardar archivo
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    st.download_button(
+        label="⬇ Descargar Reporte Semanal",
+        data=buffer,
+        file_name=f"Reporte_Semana_{semana_reporte}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
