@@ -281,6 +281,25 @@ st.write("### 🏆 Top 3 Volumen")
 
 top3 = df.sort_values("total_sec", ascending=False).head(3)
 st.dataframe(top3[["Nombre","total_sec","VN","Rank_Volumen"]])
+
+# ==========================================================
+# SECCIÓN 7C - REPORTE EJECUTIVO SEMANAL
+# ==========================================================
+
+st.subheader("📈 Reporte Ejecutivo Semana")
+
+st.write("### Ranking General Simplificado")
+
+ranking_simple = df.sort_values("Rank_Volumen")[[
+    "Nombre",
+    "total_sec",
+    "Rank_Volumen"
+]]
+
+ranking_simple["Horas"] = ranking_simple["total_sec"] / 3600
+
+st.dataframe(ranking_simple[["Nombre","Horas","Rank_Volumen"]])
+
 # ==========================================================
 # SECCIÓN 8 - ACTUALIZAR HISTÓRICO (VERSIÓN EXTENDIDA)
 # ==========================================================
