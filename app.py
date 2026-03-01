@@ -106,47 +106,10 @@ df["VN"] = df["VN"].round(2)
 df["Rank_Volumen"] = df["VN"].rank(ascending=False, method="min")
 
 # ==========================================================
-# SECCIÓN 4B - KPI ADHERENCIA (PLAN GLOBAL)
+# SECCIÓN 4B - KPI ADHERENCIA (CONVERSIÓN AUTOMÁTICA)
 # ==========================================================
 
 plan_file = st.sidebar.file_uploader("Subir Plan Global", type=["xlsx"])
-
-if plan_file:
-
-    plan_raw = pd.read_excel(plan_file, index_col=0)
-
-    # Asegurar que solo usamos disciplinas
-    disciplinas = ["Natación", "Ciclismo", "Trote"]
-    plan_raw = plan_raw.loc[disciplinas]
-
-    # Convertir todo a segundos
-    plan_sec = plan_raw.applymap(time_to_seconds)
-
-    plan_swim_sec = plan_sec.loc["Natación"].sum()
-    plan_bike_sec = plan_sec.loc["Ciclismo"].sum()
-    plan_run_sec = plan_sec.loc["Trote"].sum()
-
-    plan_total_sec = plan_swim_sec + plan_bike_sec + plan_run_sec
-
-    # Cálculo adherencia por atleta
-    def calcular_adherencia(real_total, plan_total):
-        if plan_total == 0:
-            return np.nan
-        valor = real_total / plan_total
-        return round(min(valor, 1.10), 2)
-
-    df["Adherencia"] = df["total_sec"].apply(
-        lambda x: calcular_adherencia(x, plan_total_sec)
-    )
-
-    df["Rank_Adherencia"] = df["Adherencia"].rank(
-        ascending=False, method="min"
-    )
-
-# ==========================================================
-# SECCIÓN 4C - CONVERSIÓN AUTOMÁTICA PLAN A MODELO GLOBAL
-# (con +3h Natación obligatorias)
-# ==========================================================
 
 def clasificar_disciplina(texto):
     if pd.isna(texto):
@@ -171,11 +134,11 @@ if plan_file:
 
     # Detectar filas clave
     fila_actividad = plan_original[
-        plan_original.iloc[:,0].str.contains("Actividad", case=False, na=False)
+        plan_original.iloc[:,0].astype(str).str.contains("Actividad", case=False, na=False)
     ].index[0]
 
     fila_duracion = plan_original[
-        plan_original.iloc[:,0].str.contains("Duración", case=False, na=False)
+        plan_original.iloc[:,0].astype(str).str.contains("Duración", case=False, na=False)
     ].index[0]
 
     actividades = plan_original.iloc[fila_actividad, 1:8]
@@ -197,20 +160,36 @@ if plan_file:
         if disciplina in plan_convertido:
             plan_convertido[disciplina][i] += tiempo_sec
 
-    # 🔵 AGREGAR 3H NATACIÓN EN 3 DÍAS (distribución automática)
+    # 🔵 AGREGAR 3H NATACIÓN OBLIGATORIAS
     horas_extra_natacion = 3 * 3600
     sesiones_natacion = 3
     tiempo_por_sesion = horas_extra_natacion // sesiones_natacion
-
     dias_para_natacion = [0, 2, 4]  # Lunes, Miércoles, Viernes
 
     for d in dias_para_natacion:
         plan_convertido["Natación"][d] += tiempo_por_sesion
 
-    # Crear DataFrame oficial
     df_plan_global = pd.DataFrame(plan_convertido, index=dias).T
 
     plan_total_sec = df_plan_global.sum().sum()
+
+    # ==========================
+    # CÁLCULO ADHERENCIA
+    # ==========================
+
+    def calcular_adherencia(real_total, plan_total):
+        if plan_total == 0:
+            return np.nan
+        valor = real_total / plan_total
+        return round(min(valor, 1.10), 2)
+
+    df["Adherencia"] = df["total_sec"].apply(
+        lambda x: calcular_adherencia(x, plan_total_sec)
+    )
+
+    df["Rank_Adherencia"] = df["Adherencia"].rank(
+        ascending=False, method="min"
+    )
 
     st.subheader("📋 Plan Global Convertido (+3h Natación)")
     st.dataframe(df_plan_global)
