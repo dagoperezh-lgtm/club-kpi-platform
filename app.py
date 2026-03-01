@@ -58,6 +58,20 @@ def time_to_seconds(time_str):
 
     return hours*3600 + minutes*60
 
+# ==========================================================
+# KPI BALANCE (COEFICIENTE DE VARIACIÓN)
+# ==========================================================
+
+def calcular_cv(row):
+    valores = np.array([row["swim_sec"], row["bike_sec"], row["run_sec"]])
+    valores = valores[valores > 0]
+
+    if len(valores) < 2:
+        return np.nan
+
+    return round(np.std(valores) / np.mean(valores), 4)
+
+df["CV"] = df.apply(calcular_cv, axis=1)
 
 def normalize_column(series):
     max_val = series.max()
@@ -478,32 +492,48 @@ if st.button("Generar PDF", key="btn_pdf"):
 # SECCIÓN 10 - REPORTE SEMANAL WORD
 # ==========================================================
 
+# ==========================================================
+# REPORTE SEMANAL PRO - WORD
+# ==========================================================
+
 from docx import Document
 from docx.shared import Pt
 from datetime import datetime
 
-st.subheader("📝 Generar Reporte Semanal Word")
+st.subheader("📝 Generar Reporte Semanal PRO")
 
-semana_reporte = st.text_input("Número o nombre de semana", key="semana_word")
+semana_label = st.text_input("Nombre Semana (ej: 08)", key="semana_pro")
 
-if st.button("Generar Reporte Word", key="btn_word"):
+if st.button("Generar Reporte Semanal PRO", key="btn_pro"):
 
     doc = Document()
-    doc.add_heading(f"Reporte Semanal Club TYM - Semana {semana_reporte}", level=1)
+    doc.add_heading(f"Reporte Semanal Club TYM", level=1)
+    doc.add_heading(f"Semana {semana_label}", level=2)
 
+    # ==========================
+    # RESUMEN GENERAL
+    # ==========================
     total_deportistas = len(df)
-    total_horas = df["total_sec"].sum() / 3600
-    triatletas_completos = len(df[(df["swim_sec"]>0) & (df["bike_sec"]>0) & (df["run_sec"]>0)])
+    triatletas_completos = len(
+        df[(df["swim_sec"]>0) & (df["bike_sec"]>0) & (df["run_sec"]>0)]
+    )
+    total_horas = round(df["total_sec"].sum()/3600, 2)
 
-    doc.add_heading("Resumen General", level=2)
+    doc.add_heading("🔍 Resumen General", level=2)
     doc.add_paragraph(f"Total deportistas registrados: {total_deportistas}")
     doc.add_paragraph(f"Triatletas completos: {triatletas_completos}")
-    doc.add_paragraph(f"Horas totales del club: {round(total_horas,1)}")
+    doc.add_paragraph(f"Horas totales del club: {total_horas}")
 
-    # TOP 5
-    doc.add_heading("TOP 5 TIEMPO GENERAL", level=2)
+    # ==========================
+    # TOP 5 TRIATLETAS COMPLETOS
+    # ==========================
+    completos = df[
+        (df["swim_sec"]>0) & 
+        (df["bike_sec"]>0) & 
+        (df["run_sec"]>0)
+    ].sort_values("total_sec", ascending=False).head(5)
 
-    top5 = df.sort_values("total_sec", ascending=False).head(5)
+    doc.add_heading("🏅 TOP 5 TRIATLETAS COMPLETOS", level=2)
 
     table = doc.add_table(rows=1, cols=5)
     hdr = table.rows[0].cells
@@ -513,7 +543,7 @@ if st.button("Generar Reporte Word", key="btn_word"):
     hdr[3].text = "Ciclismo"
     hdr[4].text = "Trote"
 
-    for _, row in top5.iterrows():
+    for _, row in completos.iterrows():
         row_cells = table.add_row().cells
         row_cells[0].text = row["Nombre"]
         row_cells[1].text = seconds_to_hhmm(row["total_sec"])
@@ -521,23 +551,75 @@ if st.button("Generar Reporte Word", key="btn_word"):
         row_cells[3].text = seconds_to_hhmm(row["bike_sec"])
         row_cells[4].text = seconds_to_hhmm(row["run_sec"])
 
-    # Insight automático simple
-    lider = top5.iloc[0]["Nombre"]
+    # ==========================
+    # TOP 5 MÁS BALANCEADOS
+    # ==========================
+    balanceados = df[df["CV"].notna()].sort_values("CV").head(5)
 
-    doc.add_heading("Análisis del Podio", level=2)
+    doc.add_heading("⚖️ TOP 5 TRIATLETAS MÁS BALANCEADOS", level=2)
+
+    table2 = doc.add_table(rows=1, cols=3)
+    hdr2 = table2.rows[0].cells
+    hdr2[0].text = "Nombre"
+    hdr2[1].text = "CV"
+    hdr2[2].text = "Total"
+
+    for _, row in balanceados.iterrows():
+        row_cells = table2.add_row().cells
+        row_cells[0].text = row["Nombre"]
+        row_cells[1].text = str(row["CV"])
+        row_cells[2].text = seconds_to_hhmm(row["total_sec"])
+
+    # ==========================
+    # TOP 15 GENERAL
+    # ==========================
+    doc.add_heading("🥇 TOP 15 TIEMPO GENERAL", level=2)
+
+    top15 = df.sort_values("total_sec", ascending=False).head(15)
+
+    table3 = doc.add_table(rows=1, cols=3)
+    hdr3 = table3.rows[0].cells
+    hdr3[0].text = "Nombre"
+    hdr3[1].text = "Total"
+    hdr3[2].text = "Ranking"
+
+    for i, (_, row) in enumerate(top15.iterrows(), start=1):
+        row_cells = table3.add_row().cells
+        row_cells[0].text = row["Nombre"]
+        row_cells[1].text = seconds_to_hhmm(row["total_sec"])
+        row_cells[2].text = str(i)
+
+    # ==========================
+    # INSIGHT AUTOMÁTICO
+    # ==========================
+    lider = top15.iloc[0]
+    segundo = top15.iloc[1]
+
+    diff = lider["total_sec"] - segundo["total_sec"]
+
+    doc.add_heading("💡 Insights Estratégicos", level=2)
+
     doc.add_paragraph(
-        f"{lider} lidera la semana con el mayor volumen acumulado, "
-        f"marcando la pauta del club en esta edición."
+        f"{lider['Nombre']} domina la semana con "
+        f"{seconds_to_hhmm(lider['total_sec'])}, "
+        f"sacando {seconds_to_hhmm(diff)} al segundo lugar."
     )
 
-    # Guardar archivo
+    bici_pct = round(df["bike_sec"].sum() / df["total_sec"].sum() * 100, 1)
+
+    doc.add_paragraph(
+        f"El ciclismo representa el {bici_pct}% del volumen total del club, "
+        f"confirmando la tendencia de predominio sobre ruedas."
+    )
+
+    # Guardar
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
 
     st.download_button(
-        label="⬇ Descargar Reporte Semanal",
+        label="⬇ Descargar Reporte Semanal PRO",
         data=buffer,
-        file_name=f"Reporte_Semana_{semana_reporte}.docx",
+        file_name=f"Reporte_Semana_{semana_label}.docx",
         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
