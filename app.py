@@ -71,7 +71,7 @@ def calcular_cv(row):
 
     return round(np.std(valores) / np.mean(valores), 4)
 
-df["CV"] = df.apply(calcular_cv, axis=1)
+
 
 def normalize_column(series):
     max_val = series.max()
