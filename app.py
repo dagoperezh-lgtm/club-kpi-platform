@@ -194,15 +194,12 @@ if st.button("Actualizar Histórico"):
     )
 
 # ==========================================================
-# SECCIÓN 9 - FICHA INDIVIDUAL PDF
+# SECCIÓN 9 - FICHA INDIVIDUAL PDF (CON HISTÓRICO REAL)
 # ==========================================================
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 import matplotlib.pyplot as plt
@@ -221,6 +218,42 @@ if st.button("Generar PDF"):
 
     atleta_df = df[df["Nombre"] == selected_athlete].iloc[0]
 
+    # ==========================
+    # CARGAR HISTÓRICO
+    # ==========================
+    if historico_file:
+        df_hist = pd.read_excel(historico_file)
+        df_hist_atleta = df_hist[df_hist["Nombre"] == selected_athlete]
+    else:
+        df_hist_atleta = pd.DataFrame()
+
+    # Excluir semana actual del histórico
+    if not df_hist_atleta.empty:
+        promedio_hist_total = df_hist_atleta["total_sec"].mean()
+        promedio_hist_swim = df_hist_atleta["swim_sec"].mean()
+        promedio_hist_bike = df_hist_atleta["bike_sec"].mean()
+        promedio_hist_run = df_hist_atleta["run_sec"].mean()
+    else:
+        promedio_hist_total = 0
+        promedio_hist_swim = 0
+        promedio_hist_bike = 0
+        promedio_hist_run = 0
+
+    # Función comparación histórica
+    def comparar(actual, promedio):
+        if promedio == 0:
+            return "Sin histórico previo"
+        diff = actual - promedio
+        if diff > 0:
+            return f"{seconds_to_hhmm(abs(diff))} MÁS"
+        elif diff < 0:
+            return f"{seconds_to_hhmm(abs(diff))} MENOS"
+        else:
+            return "Igual a tu promedio histórico"
+
+    # ==========================
+    # CREAR PDF
+    # ==========================
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
@@ -228,36 +261,38 @@ if st.button("Generar PDF"):
     styles = getSampleStyleSheet()
     title_style = styles["Heading1"]
 
-    # Título
     elements.append(Paragraph(f"Ficha Individual - {selected_athlete}", title_style))
     elements.append(Spacer(1, 0.3 * inch))
 
-    # KPIs principales
     data_kpi = [
         ["Total Semana", seconds_to_hhmm(atleta_df["total_sec"])],
+        ["Vs Histórico", comparar(atleta_df["total_sec"], promedio_hist_total)],
         ["Ranking Volumen", int(atleta_df["Rank_Volumen"])],
-        ["% vs Promedio Equipo", atleta_df["%_vs_Team_Avg"]],
         ["VN (0-1)", atleta_df["VN"]],
     ]
 
-    table_kpi = Table(data_kpi, colWidths=[200, 150])
+    table_kpi = Table(data_kpi, colWidths=[220, 200])
     table_kpi.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
     ]))
 
     elements.append(table_kpi)
     elements.append(Spacer(1, 0.4 * inch))
 
-    # Tabla disciplinas
     data_disc = [
-        ["Disciplina", "Tiempo"],
-        ["Natación", seconds_to_hhmm(atleta_df["swim_sec"])],
-        ["Ciclismo", seconds_to_hhmm(atleta_df["bike_sec"])],
-        ["Trote", seconds_to_hhmm(atleta_df["run_sec"])],
+        ["Disciplina", "Tiempo", "Vs Histórico"],
+        ["Natación",
+         seconds_to_hhmm(atleta_df["swim_sec"]),
+         comparar(atleta_df["swim_sec"], promedio_hist_swim)],
+        ["Ciclismo",
+         seconds_to_hhmm(atleta_df["bike_sec"]),
+         comparar(atleta_df["bike_sec"], promedio_hist_bike)],
+        ["Trote",
+         seconds_to_hhmm(atleta_df["run_sec"]),
+         comparar(atleta_df["run_sec"], promedio_hist_run)],
     ]
 
-    table_disc = Table(data_disc, colWidths=[200, 150])
+    table_disc = Table(data_disc, colWidths=[120, 120, 180])
     table_disc.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
