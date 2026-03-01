@@ -326,17 +326,64 @@ if st.button("Generar PDF"):
     atleta_norm = normalizar_nombre(selected_athlete)
     atleta_df = df[df["Nombre_norm"] == atleta_norm].iloc[0]
 
+  # ==========================================================
+# SECCIÓN 9 - FICHA INDIVIDUAL PDF (ROBUSTA UTF-8 + HISTÓRICO)
+# ==========================================================
+
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+import matplotlib.pyplot as plt
+import tempfile
+
+def seconds_to_hhmm(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    return f"{h}h {m}min"
+
+def limpiar_texto_mal_codificado(texto):
+    try:
+        return texto.encode('latin1').decode('utf-8')
+    except:
+        return texto
+
+st.subheader("📄 Generar Ficha Individual")
+
+# Corregir posibles errores de codificación en nombres
+df["Nombre"] = df["Nombre"].astype(str).apply(limpiar_texto_mal_codificado)
+
+selected_athlete = st.selectbox("Seleccionar atleta", df["Nombre"].unique())
+
+if st.button("Generar PDF"):
+
+    atleta_df = df[df["Nombre"] == selected_athlete].iloc[0]
+
     # ==========================
-    # CARGAR HISTÓRICO NORMALIZADO
+    # CARGAR HISTÓRICO DE FORMA SEGURA
     # ==========================
     if historico_file:
         df_hist = pd.read_excel(historico_file)
-        df_hist["Nombre_norm"] = df_hist["Nombre"].apply(normalizar_nombre)
-        df_hist_atleta = df_hist[df_hist["Nombre_norm"] == atleta_norm]
+
+        # Limpiar nombres columnas
+        df_hist.columns = df_hist.columns.str.strip()
+
+        # Verificar si existe columna nombre (case insensitive)
+        nombre_col = None
+        for col in df_hist.columns:
+            if col.lower() == "nombre":
+                nombre_col = col
+
+        if nombre_col:
+            df_hist[nombre_col] = df_hist[nombre_col].astype(str).apply(limpiar_texto_mal_codificado)
+            df_hist_atleta = df_hist[df_hist[nombre_col] == selected_athlete]
+        else:
+            df_hist_atleta = pd.DataFrame()
     else:
         df_hist_atleta = pd.DataFrame()
 
-    if not df_hist_atleta.empty:
+    if not df_hist_atleta.empty and "total_sec" in df_hist_atleta.columns:
         promedio_hist_total = df_hist_atleta["total_sec"].mean()
     else:
         promedio_hist_total = 0
@@ -375,7 +422,6 @@ if st.button("Generar PDF"):
     elements.append(table_kpi)
     elements.append(Spacer(1, 0.4 * inch))
 
-    # Gráfico barras verticales
     fig, ax = plt.subplots()
     disciplinas = ["Swim", "Bike", "Run"]
     valores = [
