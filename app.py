@@ -19,9 +19,11 @@ st.title("🏊🚴🏃 Club KPI Platform - MVP Volumen")
 # SECCIÓN 1 - FUNCIONES UTILITARIAS (EDITABLE)
 # ==========================================================
 
+import unicodedata
+
 def time_to_seconds(time_str):
     """
-    Convierte formatos:
+    Convierte:
     - 7h 39min
     - 38min
     - 00:33:44
@@ -63,6 +65,19 @@ def normalize_column(series):
         return series
     return series / max_val
 
+
+def normalizar_nombre(nombre):
+    """
+    Quita tildes y normaliza para comparación interna
+    """
+    if pd.isna(nombre):
+        return ""
+
+    nombre = str(nombre).strip().lower()
+    nombre = unicodedata.normalize('NFD', nombre)
+    nombre = ''.join(c for c in nombre if unicodedata.category(c) != 'Mn')
+
+    return nombre
 
 # ==========================================================
 # SECCIÓN 2 - CARGA DE ARCHIVOS
@@ -283,7 +298,7 @@ if st.button("Actualizar Histórico"):
     )
 
 # ==========================================================
-# SECCIÓN 9 - FICHA INDIVIDUAL PDF (CON HISTÓRICO REAL)
+# SECCIÓN 9 - FICHA INDIVIDUAL PDF (NORMALIZADA)
 # ==========================================================
 
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
@@ -301,34 +316,31 @@ def seconds_to_hhmm(seconds):
 
 st.subheader("📄 Generar Ficha Individual")
 
+# Crear columna normalizada temporal
+df["Nombre_norm"] = df["Nombre"].apply(normalizar_nombre)
+
 selected_athlete = st.selectbox("Seleccionar atleta", df["Nombre"].unique())
 
 if st.button("Generar PDF"):
 
-    atleta_df = df[df["Nombre"] == selected_athlete].iloc[0]
+    atleta_norm = normalizar_nombre(selected_athlete)
+    atleta_df = df[df["Nombre_norm"] == atleta_norm].iloc[0]
 
     # ==========================
-    # CARGAR HISTÓRICO
+    # CARGAR HISTÓRICO NORMALIZADO
     # ==========================
     if historico_file:
         df_hist = pd.read_excel(historico_file)
-        df_hist_atleta = df_hist[df_hist["Nombre"] == selected_athlete]
+        df_hist["Nombre_norm"] = df_hist["Nombre"].apply(normalizar_nombre)
+        df_hist_atleta = df_hist[df_hist["Nombre_norm"] == atleta_norm]
     else:
         df_hist_atleta = pd.DataFrame()
 
-    # Excluir semana actual del histórico
     if not df_hist_atleta.empty:
         promedio_hist_total = df_hist_atleta["total_sec"].mean()
-        promedio_hist_swim = df_hist_atleta["swim_sec"].mean()
-        promedio_hist_bike = df_hist_atleta["bike_sec"].mean()
-        promedio_hist_run = df_hist_atleta["run_sec"].mean()
     else:
         promedio_hist_total = 0
-        promedio_hist_swim = 0
-        promedio_hist_bike = 0
-        promedio_hist_run = 0
 
-    # Función comparación histórica
     def comparar(actual, promedio):
         if promedio == 0:
             return "Sin histórico previo"
@@ -340,24 +352,19 @@ if st.button("Generar PDF"):
         else:
             return "Igual a tu promedio histórico"
 
-    # ==========================
-    # CREAR PDF
-    # ==========================
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
 
     styles = getSampleStyleSheet()
-    title_style = styles["Heading1"]
-
-    elements.append(Paragraph(f"Ficha Individual - {selected_athlete}", title_style))
+    elements.append(Paragraph(f"Ficha Individual - {selected_athlete}", styles["Heading1"]))
     elements.append(Spacer(1, 0.3 * inch))
 
     data_kpi = [
         ["Total Semana", seconds_to_hhmm(atleta_df["total_sec"])],
         ["Vs Histórico", comparar(atleta_df["total_sec"], promedio_hist_total)],
         ["Ranking Volumen", int(atleta_df["Rank_Volumen"])],
-        ["VN (0-1)", atleta_df["VN"]],
+        ["Adherencia", atleta_df.get("Adherencia", "N/A")],
     ]
 
     table_kpi = Table(data_kpi, colWidths=[220, 200])
@@ -366,28 +373,6 @@ if st.button("Generar PDF"):
     ]))
 
     elements.append(table_kpi)
-    elements.append(Spacer(1, 0.4 * inch))
-
-    data_disc = [
-        ["Disciplina", "Tiempo", "Vs Histórico"],
-        ["Natación",
-         seconds_to_hhmm(atleta_df["swim_sec"]),
-         comparar(atleta_df["swim_sec"], promedio_hist_swim)],
-        ["Ciclismo",
-         seconds_to_hhmm(atleta_df["bike_sec"]),
-         comparar(atleta_df["bike_sec"], promedio_hist_bike)],
-        ["Trote",
-         seconds_to_hhmm(atleta_df["run_sec"]),
-         comparar(atleta_df["run_sec"], promedio_hist_run)],
-    ]
-
-    table_disc = Table(data_disc, colWidths=[120, 120, 180])
-    table_disc.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
-    ]))
-
-    elements.append(table_disc)
     elements.append(Spacer(1, 0.4 * inch))
 
     # Gráfico barras verticales
