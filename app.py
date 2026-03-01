@@ -111,18 +111,45 @@ if semana_file is None:
 # ==========================================================
 
 if semana_file.name.endswith(".csv"):
-    df_raw = pd.read_csv(semana_file)
+    df_raw = pd.read_csv(semana_file, encoding="utf-8-sig")
 else:
-    df_raw = pd.read_excel(semana_file)
+    df_raw = pd.read_excel(semana_file, engine="openpyxl")
 
-# Asegurar nombres estándar
 df = df_raw.copy()
 
-# Convertir tiempos a segundos
+# ==========================
+# CONVERSIÓN DE TIEMPOS
+# ==========================
+
 df["swim_sec"] = df["Natacion"].apply(time_to_seconds)
 df["bike_sec"] = df["Ciclismo"].apply(time_to_seconds)
 df["run_sec"] = df["Trote"].apply(time_to_seconds)
-df["total_sec"] = df["swim_sec"] + df["bike_sec"] + df["run_sec"]
+
+df["total_sec"] = (
+    df["swim_sec"] +
+    df["bike_sec"] +
+    df["run_sec"]
+)
+
+# ==========================
+# KPI BALANCE (CV)
+# ==========================
+
+def calcular_cv(row):
+    valores = np.array([
+        row["swim_sec"],
+        row["bike_sec"],
+        row["run_sec"]
+    ])
+
+    valores = valores[valores > 0]
+
+    if len(valores) < 2:
+        return np.nan
+
+    return round(np.std(valores) / np.mean(valores), 4)
+
+df["CV"] = df.apply(calcular_cv, axis=1)
 
 # ==========================================================
 # SECCIÓN 4 - KPI VOLUMEN
