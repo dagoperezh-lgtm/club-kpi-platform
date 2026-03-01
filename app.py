@@ -106,6 +106,44 @@ df["VN"] = df["VN"].round(2)
 df["Rank_Volumen"] = df["VN"].rank(ascending=False, method="min")
 
 # ==========================================================
+# SECCIÓN 4B - KPI ADHERENCIA (PLAN GLOBAL)
+# ==========================================================
+
+plan_file = st.sidebar.file_uploader("Subir Plan Global", type=["xlsx"])
+
+if plan_file:
+
+    plan_raw = pd.read_excel(plan_file, index_col=0)
+
+    # Asegurar que solo usamos disciplinas
+    disciplinas = ["Natación", "Ciclismo", "Trote"]
+    plan_raw = plan_raw.loc[disciplinas]
+
+    # Convertir todo a segundos
+    plan_sec = plan_raw.applymap(time_to_seconds)
+
+    plan_swim_sec = plan_sec.loc["Natación"].sum()
+    plan_bike_sec = plan_sec.loc["Ciclismo"].sum()
+    plan_run_sec = plan_sec.loc["Trote"].sum()
+
+    plan_total_sec = plan_swim_sec + plan_bike_sec + plan_run_sec
+
+    # Cálculo adherencia por atleta
+    def calcular_adherencia(real_total, plan_total):
+        if plan_total == 0:
+            return np.nan
+        valor = real_total / plan_total
+        return round(min(valor, 1.10), 2)
+
+    df["Adherencia"] = df["total_sec"].apply(
+        lambda x: calcular_adherencia(x, plan_total_sec)
+    )
+
+    df["Rank_Adherencia"] = df["Adherencia"].rank(
+        ascending=False, method="min"
+    )
+    
+# ==========================================================
 # SECCIÓN 5 - RANKING POR DISCIPLINA
 # ==========================================================
 
