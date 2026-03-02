@@ -36,18 +36,12 @@ def clean_string(text):
     if text is None or pd.isna(text):
         return ""
     
-    # Proceso de normalización de caracteres paso a paso
     nombre_limpio_temp = str(text).strip()
-    
     nombre_limpio_temp = nombre_limpio_temp.upper()
-    
-    # Uso de NFKD para descomponer caracteres con tildes
     info_normalizada = unicodedata.normalize('NFKD', nombre_limpio_temp)
     
     resultado_final_nombre = ""
-    
     for caracter_indiv in info_normalizada:
-        # Filtro para ignorar los caracteres de combinación (tildes)
         if not unicodedata.combining(caracter_indiv):
             resultado_final_nombre = resultado_final_nombre + caracter_indiv
             
@@ -62,78 +56,41 @@ def to_mins(valor_entrada_tiempo):
         return 0
     
     string_valor = str(valor_entrada_tiempo).strip()
-    
-    # Listado exhaustivo de casos nulos detectados en la operativa real
     lista_casos_nulos = ['--:--', '0', '', '00:00:00', '0:00:00', '00:00', '0.0', 'NC', '0:00']
     
     if string_valor in lista_casos_nulos:
         return 0
         
     try:
-        # 🛡️ REGLA ARITMÉTICA: Si el valor es numérico (fracción de día de Excel)
         if isinstance(valor_entrada_tiempo, (float, int)):
-            # Excel almacena 1 día completo como 1.0. 
-            # Multiplicamos por 1440 para obtener la cifra real de minutos.
-            minutos_finales_calculados = int(round(valor_entrada_tiempo * 1440))
-            return minutos_finales_calculados
+            return int(round(valor_entrada_tiempo * 1440))
         
-        # Si el dato es un objeto de tiempo nativo de Python
         if isinstance(valor_entrada_tiempo, (time, datetime)):
-            minutos_finales_calculados = (valor_entrada_tiempo.hour * 60) + valor_entrada_tiempo.minute
-            return minutos_finales_calculados
+            return (valor_entrada_tiempo.hour * 60) + valor_entrada_tiempo.minute
             
-        # Si el string representa un número decimal puro
         try:
             conversion_float = float(string_valor)
-            minutos_finales_calculados = int(round(conversion_float * 1440))
-            return minutos_finales_calculados
+            return int(round(conversion_float * 1440))
         except ValueError:
-            # No es numérico, continuamos con la lógica de parsing de texto
             pass
             
-        # Formato de hora estándar con separador de dos puntos (HH:MM)
         if ':' in string_valor:
             bloques_tiempo = string_valor.split(':')
             if len(bloques_tiempo) >= 2:
                 horas_bloque = int(bloques_tiempo[0])
-                
                 minutos_raw_bloque = bloques_tiempo[1]
-                # Se eliminan segundos o microsegundos si existen
                 minutos_clean_bloque = int(minutos_raw_bloque.split('.')[0])
-                
-                total_minutos_bloque = (horas_bloque * 60) + minutos_clean_bloque
-                return total_minutos_bloque
+                return (horas_bloque * 60) + minutos_clean_bloque
         
-        # Formato nativo de Strava (ejemplo: 11h 6min)
         busqueda_horas = re.search(r'(\d+)h', string_valor)
         busqueda_minutos = re.search(r'(\d+)min', string_valor)
         
-        h_resultado = 0
-        if busqueda_horas:
-            h_resultado = int(busqueda_horas.group(1))
+        h_resultado = int(busqueda_horas.group(1)) if busqueda_horas else 0
+        m_resultado = int(busqueda_minutos.group(1)) if busqueda_minutos else 0
             
-        m_resultado = 0
-        if busqueda_minutos:
-            m_resultado = int(busqueda_minutos.group(1))
-            
-        resultado_total_minutos = (h_resultado * 60) + m_resultado
-        return resultado_total_minutos
-        
+        return (h_resultado * 60) + m_resultado
     except Exception:
-        # Fallback de seguridad para evitar que la aplicación se detenga
         return 0
-
-def to_excel_time_value(dato_entrada_original):
-    """
-    Transforma la entrada en la fracción decimal exacta que requiere el motor de Excel.
-    Este paso es vital para que las celdas sean sumables y promediables.
-    """
-    minutos_para_excel = to_mins(dato_entrada_original)
-    
-    # 24 horas equivalen a 1440 minutos totales
-    valor_decimal_excel = minutos_para_excel / 1440.0
-    
-    return valor_decimal_excel
 
 def to_hhmmss_display(minutos_totales_input):
     """
@@ -141,38 +98,26 @@ def to_hhmmss_display(minutos_totales_input):
     """
     valor_horas_v = int(minutos_totales_input // 60)
     valor_minutos_v = int(minutos_totales_input % 60)
-    
-    # Generación de la cadena de texto con formato de reloj
-    string_formato_reloj = f"{valor_horas_v:02d}:{valor_minutos_v:02d}:00"
-    
-    return string_formato_reloj
+    return f"{valor_horas_v:02d}:{valor_minutos_v:02d}:00"
 
 # =============================================================================
-# SECCIÓN 3: MOTOR NARRATIVO PRO CHILE (V2.2.28 - 20+ FRASES POR SECCIÓN)
+# SECCIÓN 3: MOTOR NARRATIVO PRO CHILE (V2.2.28 - 75+ FRASES)
 # =============================================================================
-import random
 
-# Diccionario global para persistencia de frases durante la ejecución
 PILAS_COMENTARIOS = {}
 
 def obtener_frase_base(categoria, pool_frases):
-    """Maneja el barajado de frases para garantizar 0 repeticiones."""
     global PILAS_COMENTARIOS
     if categoria not in PILAS_COMENTARIOS or not PILAS_COMENTARIOS[categoria]:
-        temp_pool = [str(f) for f in pool_frases] # Forzamos a string para evitar TypeErrors
+        temp_pool = [str(f) for f in pool_frases]
         random.shuffle(temp_pool)
         PILAS_COMENTARIOS[categoria] = temp_pool
     return PILAS_COMENTARIOS[categoria].pop()
 
 def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
-    """
-    Motor de Narrativa Pro Chile: 20+ variantes por sección.
-    Léxico corregido (piscina) e inyección dinámica de identidad.
-    """
     atleta_actual = str(datos_de_fila.get('Deportista', 'Atleta TYM'))
     tiempo_actual = str(datos_de_fila.get(nombre_categoria, "00:00:00"))
     
-    # --- BANCO DE NARRATIVA CHILENA (20-25 FRASES POR SECCIÓN) ---
     pools = {
         'General': [
             "La disciplina de {atleta} es el motor del club; liderar con este volumen es pura entrega.",
@@ -276,103 +221,52 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
         ]
     }
 
-    # SELECCIÓN Y FORMATEO SEGURO
     cat_key = 'General' if nombre_categoria in ['Completos', 'General'] else nombre_categoria
     if cat_key not in pools:
         return f"Desempeño consistente de {atleta_actual} en {nombre_categoria}."
 
     frase_plantilla = str(obtener_frase_base(cat_key, pools[cat_key]))
-    
-    # REEMPLAZO DINÁMICO (Seguro contra duplicidad)
     comentario_final = frase_plantilla.replace("{atleta}", atleta_actual).replace("{tiempo}", tiempo_actual)
     
-    # Distinción Líder
     if rank_posicion == 1 and cat_key == 'General':
         comentario_final = f"🏆 {comentario_final.replace(atleta_actual, f'nuestro líder {atleta_actual}')}"
     
     return comentario_final
 
-# *****************************************************************************
-# --- 4. PARSERS DE ENTRADA (BLINDADO - NO SINTETIZAR) ---
-# *****************************************************************************
+# =============================================================================
+# SECCIÓN 4: PARSERS DE ENTRADA (STRAVA & OCR)
+# =============================================================================
 
 def parse_raw_data(bloque_input_strava):
-    """
-    Procesa el bloque de texto copiado de Strava (Tiempo Total).
-    No utiliza síntesis; cada paso de extracción es explícito y visible.
-    """
     lista_de_registros_atleta = []
     valor_rank_contador = 1
-    
-    # Limpieza de caracteres de control web (espacios de no ruptura)
     bloque_input_strava = bloque_input_strava.replace('\xa0', ' ')
     lineas_encontradas = bloque_input_strava.strip().split('\n')
     
     for fila_texto in lineas_encontradas:
-        if not fila_texto:
-            continue
-            
-        if 'Deportista' in fila_texto:
-            continue
-            
+        if not fila_texto or 'Deportista' in fila_texto: continue
         try:
-            # Expresión regular para detectar tiempos con formato h y min
-            patron_tiempos = r'(\d+h\s*\d*min|\d+h|\d+min|--:--)'
+            patron_tiempos = r'(\d+h\s*\d*min|\d+h|\d+min|--:--|\d{2}:\d{2}:\d{2})'
             tiempos_en_linea = re.findall(patron_tiempos, fila_texto)
+            if not tiempos_en_linea: continue
             
-            # 🛡️ CORRECCIÓN SINTAXIS AUDITADA:
-            if not tiempos_en_linea:
-                continue
-                
-            # El Tiempo Total es siempre el primer elemento detectado
             string_del_total = tiempos_en_linea[0]
             ubicacion_del_tiempo = fila_texto.find(string_del_total)
-            
-            # El nombre del deportista precede a la cifra de tiempo
             segmento_del_nombre = fila_texto[:ubicacion_del_tiempo].strip()
-            
-            # Limpieza del número de ranking si está presente en el copiado (ej: "1 Rodrigo")
             nombre_limpio_final = re.sub(r'^\d+\s*', '', segmento_del_nombre).strip()
             
-            # Conversión de los bloques de tiempo a minutos enteros
             minutos_volumen_total = to_mins(string_del_total)
+            minutos_nat = to_mins(tiempos_en_linea[1]) if len(tiempos_en_linea) > 1 else 0
+            minutos_bici = to_mins(tiempos_en_linea[2]) if len(tiempos_en_linea) > 2 else 0
+            minutos_trote = to_mins(tiempos_en_linea[3]) if len(tiempos_en_linea) > 3 else 0
             
-            minutos_nat = 0
-            if len(tiempos_en_linea) > 1:
-                minutos_nat = to_mins(tiempos_en_linea[1])
-                
-            minutos_bici = 0
-            if len(tiempos_en_linea) > 2:
-                minutos_bici = to_mins(tiempos_en_linea[2])
-                
-            minutos_trote = 0
-            if len(tiempos_en_linea) > 3:
-                minutos_trote = to_mins(tiempos_en_linea[3])
-                
-            # Cálculo del Coeficiente de Variación (CV)
             lista_tiempos_cv = [minutos_nat, minutos_bici, minutos_trote]
+            valor_cv_final = round(np.std(lista_tiempos_cv) / np.mean(lista_tiempos_cv), 4) if 0 not in lista_tiempos_cv else "NC"
             
-            if 0 in lista_tiempos_cv:
-                valor_cv_final = "NC"
-            else:
-                calculo_std = np.std(lista_tiempos_cv)
-                calculo_mean = np.mean(lista_tiempos_cv)
-                valor_cv_final = round(calculo_std / calculo_mean, 4)
-            
-            # Extracción del conteo de actividades (dato tras el tiempo total)
-            segmento_final_linea = fila_texto[ubicacion_del_tiempo + len(string_del_total):]
-            match_de_actividades = re.search(r'\d+', segmento_final_linea)
-            
-            numero_de_actividades = 0
-            if match_de_actividades:
-                numero_de_actividades = int(match_de_actividades.group())
-            
-            # Construcción del registro detallado por cada deportista
             diccionario_de_atleta = {
                 '#': valor_rank_contador,
                 'Deportista': nombre_limpio_final,
                 'Tiempo Total': to_hhmmss_display(minutos_volumen_total),
-                'Actividades': numero_de_actividades,
                 'Natación': to_hhmmss_display(minutos_nat),
                 'Bicicleta': to_hhmmss_display(minutos_bici),
                 'Trote': to_hhmmss_display(minutos_trote),
@@ -382,416 +276,212 @@ def parse_raw_data(bloque_input_strava):
                 'B_Mins': minutos_bici,
                 'R_Mins': minutos_trote
             }
-            
             lista_de_registros_atleta.append(diccionario_de_atleta)
-            valor_rank_contador = valor_rank_contador + 1
-            
-        except Exception:
-            # Omisión de líneas corruptas o sin formato válido
-            continue
-            
-    # Retorno estructurado para procesamiento masivo en hojas de cálculo
-    df_resultado_parsing = pd.DataFrame(lista_de_registros_atleta)
-    
-    return df_resultado_parsing
+            valor_rank_contador += 1
+        except Exception: continue
+    return pd.DataFrame(lista_de_registros_atleta)
 
-def parse_ocr_data(texto_ocr_crudo):
-    """
-    Parser de Ingeniería para Formato Vertical:
-    Detecta el patrón [Nombre] [Nombre] [Valor] y lo traduce a podios.
-    Blindado contra duplicidad de nombres en la misma línea.
-    """
-    # 1. Limpieza inicial: quitamos líneas vacías y encabezados de ruido
-    lineas = [l.strip() for l in texto_ocr_crudo.split('\n') if l.strip()]
-    palabras_ruido = ['tiempo', 'distancia', 'actividad', 'larga', 'total', 'clasificación']
-    lineas_limpias = [l for l in lineas if not any(r in l.lower() for r in palabras_ruido)]
-    
-    podio_distancia = []
-    podio_larga = []
-    
-    # 2. Procesamiento de bloques (Nombre -> Valor)
-    # Iteramos saltando de 2 en 2, asumiendo que el nombre es la base
-    i = 0
-    while i < len(lineas_limpias) - 1:
-        item_nombre = lineas_limpias[i]
-        
-        # Lógica para limpiar nombres duplicados (ej: "Claudio Claudio")
-        palabras_nombre = item_nombre.split()
-        mitad = len(palabras_nombre) // 2
-        if mitad > 0 and palabras_nombre[:mitad] == palabras_nombre[mitad:]:
-            nombre_final = " ".join(palabras_nombre[:mitad])
-        else:
-            nombre_final = item_nombre
-            
-        valor = lineas_limpias[i+1]
-        
-        # 3. Clasificación por naturaleza del dato
-        # Si tiene ',' o 'km', es Distancia Total
-        if ',' in valor or 'km' in valor.lower():
-            podio_distancia.append({'nombre': nombre_final, 'valor': valor})
-            i += 2
-        # Si tiene ':' es un tiempo (Actividad Larga)
-        elif ':' in valor:
-            podio_larga.append({'nombre': nombre_final, 'valor': valor})
-            i += 2
-        else:
-            # Si la línea siguiente no es un valor válido, saltamos solo 1 para buscar el par
-            i += 1
-
-    # Retornamos los Top 3 de cada categoría para el Reporte Word
-    return podio_distancia[:3], podio_larga[:3]
-
-# *****************************************************************************
-# --- 5. MOTOR DE ACTUALIZACIÓN DEL MAESTRO (BLINDADO - TOTAL INTEGRIDAD) ---
-# *****************************************************************************
+# =============================================================================
+# SECCIÓN 5: MOTOR DE ACTUALIZACIÓN DEL MAESTRO (BLINDADO - NO SINTETIZAR)
+# =============================================================================
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, nombre_nueva_columna):
     """
     Actualiza el libro Excel completo preservando TODA la historia previa.
-    Garantiza la existencia de: Tiempo Total, Natación, Bicicleta, Trote y CV.
+    Inmune a tildes y variaciones de nombre en las pestañas del Maestro.
     """
     dict_dfs_actualizados = {}
-    
-    # 1. Preparación de la llave de cruce (MatchKey) para evitar errores de nombre
     df_semana_actual['MatchKey'] = df_semana_actual['Deportista'].apply(clean_string)
+    hojas_en_maestro_norm = {clean_string(k): k for k in dict_dfs_originales.keys()}
     
-    # Definición explícita de las hojas que componen el ecosistema del Maestro
     hojas_a_procesar = {
-        'Tiempo Total': 'T_Mins',
-        'Natación': 'N_Mins',
-        'Bicicleta': 'B_Mins',
-        'Trote': 'R_Mins',
+        'TIEMPO TOTAL': 'T_Mins',
+        'NATACION': 'N_Mins',
+        'BICICLETA': 'B_Mins',
+        'TROTE': 'R_Mins',
         'CV': 'CV'
     }
     
-    for nombre_hoja, col_origen in hojas_a_procesar.items():
-        # Si la hoja existe en el archivo cargado, la procesamos
-        if nombre_hoja in dict_dfs_originales:
-            df_maestro_hoja = dict_dfs_originales[nombre_hoja].copy()
-            
-            # Identificamos la columna de identidad (Nombre, Deportista o la primera)
+    for key_norm, col_origen in hojas_a_procesar.items():
+        orig_key = hojas_en_maestro_norm.get(key_norm)
+        if orig_key:
+            df_maestro_hoja = dict_dfs_originales[orig_key].copy()
             col_identidad = 'Nombre' if 'Nombre' in df_maestro_hoja.columns else \
                             ('Deportista' if 'Deportista' in df_maestro_hoja.columns else df_maestro_hoja.columns[0])
             
             df_maestro_hoja['MatchKey'] = df_maestro_hoja[col_identidad].apply(clean_string)
-            
-            # 2. Extraemos la novedad de la semana actual
             df_novedad = df_semana_actual[['MatchKey', col_origen]].copy()
             
-            # Regla 7: Conversión a fracción de Excel para que sea sumable (excepto CV)
             if col_origen != 'CV':
                 df_novedad[nombre_nueva_columna] = df_novedad[col_origen].apply(lambda x: x / 1440.0)
             else:
                 df_novedad[nombre_nueva_columna] = df_novedad[col_origen]
             
-            # Eliminamos duplicados en la novedad para no corromper el merge
             df_novedad = df_novedad.drop_duplicates(subset=['MatchKey'], keep='first')
+            df_final_hoja = pd.merge(df_maestro_hoja, df_novedad[['MatchKey', nombre_nueva_columna]], on='MatchKey', how='outer')
             
-            # 3. MERGE OUTER: El corazón de la persistencia histórica
-            # how='outer' mantiene Sem 01, Sem 02... y pega la nueva al final.
-            df_final_hoja = pd.merge(
-                df_maestro_hoja, 
-                df_novedad[['MatchKey', nombre_nueva_columna]], 
-                on='MatchKey', 
-                how='outer'
-            )
-            
-            # 4. Gestión de Atletas Nuevos
-            # Si un atleta aparece en la semana pero no estaba en el maestro, llenamos su nombre
             mask_nombre_vacio = df_final_hoja[col_identidad].isna()
             nombres_mapeo = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
             df_final_hoja.loc[mask_nombre_vacio, col_identidad] = df_final_hoja.loc[mask_nombre_vacio, 'MatchKey'].map(nombres_mapeo)
+            df_final_hoja[nombre_nueva_columna] = df_final_hoja[nombre_nueva_columna].fillna('NC' if col_origen == 'CV' else 0)
             
-            # Rellenar con 0 (o NC) los vacíos de quienes no entrenaron esta semana
-            if col_origen == 'CV':
-                df_final_hoja[nombre_nueva_columna] = df_final_hoja[nombre_nueva_columna].fillna('NC')
-            else:
-                df_final_hoja[nombre_nueva_columna] = df_final_hoja[nombre_nueva_columna].fillna(0)
-            
-            # 5. Recálculo de Promedios y Totales (si existen en el archivo original)
-            cols_semanas = [c for c in df_final_hoja.columns if 'Sem' in str(c)]
-            
-            if 'Promedio' in df_final_hoja.columns and col_origen != 'CV':
-                # Promedio aritmético de todas las semanas registradas hasta ahora
-                df_final_hoja['Promedio'] = df_final_hoja[cols_semanas].mean(axis=1)
-                
-            if 'Tiempo Acumulado' in df_final_hoja.columns and col_origen != 'CV':
-                # Suma total de todas las semanas
-                df_final_hoja['Tiempo Acumulado'] = df_final_hoja[cols_semanas].sum(axis=1)
-
-            # Guardamos la hoja procesada
-            dict_dfs_actualizados[nombre_hoja] = df_final_hoja.drop(columns=['MatchKey'], errors='ignore')
+            dict_dfs_actualizados[orig_key] = df_final_hoja.drop(columns=['MatchKey'], errors='ignore')
         else:
-            # Si la hoja NO existe en el maestro, la creamos desde cero para no romper el libro
-            # (Esto es útil si el usuario sube un Excel incompleto)
             df_nueva = df_semana_actual[['Deportista', col_origen]].copy()
+            nombre_hoja_crear = key_norm.capitalize()
             df_nueva.rename(columns={'Deportista': 'Nombre', col_origen: nombre_nueva_columna}, inplace=True)
             if col_origen != 'CV':
                 df_nueva[nombre_nueva_columna] = df_nueva[nombre_nueva_columna].apply(lambda x: x / 1440.0)
-            dict_dfs_actualizados[nombre_hoja] = df_nueva
+            dict_dfs_actualizados[nombre_hoja_crear] = df_nueva
 
-    # 6. Preservación de Hojas de Referencia (Número de Semana, Calendario, etc.)
-    for hoja_restante in dict_dfs_originales:
-        if hoja_restante not in hojas_a_procesar:
-            dict_dfs_actualizados[hoja_restante] = dict_dfs_originales[hoja_restante]
-            
+    for k in dict_dfs_originales:
+        if clean_string(k) not in hojas_a_procesar:
+            dict_dfs_actualizados[k] = dict_dfs_originales[k]
     return dict_dfs_actualizados
 
 def save_maestro_to_excel(dict_dfs):
-    """
-    Escribe físicamente el libro Excel con todas las pestañas actualizadas.
-    """
     output_binario = io.BytesIO()
-    # Usamos xlsxwriter para máxima compatibilidad con formatos de Excel
     with pd.ExcelWriter(output_binario, engine='xlsxwriter') as writer:
         for nombre_hoja, df_contenido in dict_dfs.items():
             df_contenido.to_excel(writer, sheet_name=nombre_hoja, index=False)
-    
     return output_binario.getvalue()
 
-# *****************************************************************************
-# --- 6. ORQUESTADOR DE ENTREGABLES (BLINDADO - NO SINTETIZAR) ---
-# *****************************************************************************
+# =============================================================================
+# SECCIÓN 6: GENERADOR DE ENTREGABLES (WORD, GRAFICOS Y ZIP)
+# =============================================================================
 
-def generar_entregables_finales(df_final, dict_maestro_upd, tag_semana, podio_dist, podio_larga):
-    """
-    Genera el ZIP que contiene:
-    1. El Excel Maestro actualizado (Preservando toda la historia).
-    2. Las Fichas Individuales Word (Con KPIs, Gráficos y Narrativa).
-    3. El Reporte Grupal Semanal (Insights y TOP 15).
-    """
-    # Buffer principal para el archivo ZIP
-    zip_buffer_final = io.BytesIO()
-    
-    with zipfile.ZipFile(zip_buffer_final, "a", zipfile.ZIP_DEFLATED, False) as zf:
-        
-        # --- SUB-PROCESO 6.1: EXCEL DE PROCESO (MAESTRO ACTUALIZADO) ---
-        # Se genera el binario usando el motor de la Sección 5
-        archivo_excel_maestro = save_maestro_to_excel(dict_maestro_upd)
-        zf.writestr(f"01_Estadisticas_Actualizadas_{tag_semana}.xlsx", archivo_excel_maestro)
-        
-        # --- SUB-PROCESO 6.2: REPORTE GRUPAL (INSIGHTS) ---
-        # Documento que resume el desempeño del club esta semana
-        doc_grupal = Document()
-        doc_grupal.add_heading(f"Reporte Semanal Club TYM Triatlón - {tag_semana}", 0)
-        
-        # Resumen Estadístico
-        num_deportistas = len(df_final)
-        num_completos = len(df_final[df_final['Es_Completo'] == True])
-        mins_totales_club = df_final['T_Mins'].sum()
-        
-        p_resumen = doc_grupal.add_paragraph()
-        p_resumen.add_run(f"Total deportistas registrados: ").bold = True
-        p_resumen.add_run(f"{num_deportistas}\n")
-        p_resumen.add_run(f"Triatletas completos: ").bold = True
-        p_resumen.add_run(f"{num_completos}\n")
-        p_resumen.add_run(f"Horas totales del club: ").bold = True
-        p_resumen.add_run(f"{format_duracion_larga(mins_totales_club)}")
+def generar_grafico_comparativo(nombre, reales, metas):
+    labels = ['N', 'B', 'R']
+    fig, ax = plt.subplots(figsize=(4, 2.5))
+    x = np.arange(len(labels))
+    ax.bar(x - 0.2, metas, 0.4, label='Plan', color='#BDC3C7')
+    ax.bar(x + 0.2, reales, 0.4, label='Real', color='#1E90FF')
+    ax.set_xticks(x); ax.set_xticklabels(labels); ax.legend()
+    buf = io.BytesIO(); plt.savefig(buf, format='png', bbox_inches='tight'); plt.close(fig)
+    return buf
 
-        # Tabla TOP 15 Adherencia (Regla 4.5)
-        doc_grupal.add_heading(f"🏆 TOP 15 ADHERENCIA GLOBAL", level=1)
-        tabla_top = doc_grupal.add_table(rows=1, cols=4)
-        tabla_top.style = 'Light Grid Accent 1'
-        h_top = tabla_top.rows[0].cells
-        h_top[0].text, h_top[1].text = '#', 'Deportista'
-        h_top[2].text, h_top[3].text = 'TPI Global', 'Tiempo Total'
+def generar_entregables_finales(df, maestro_upd, tag_sem):
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "a", zipfile.ZIP_DEFLATED) as zf:
+        # 1. Maestro
+        ex_buf = io.BytesIO()
+        with pd.ExcelWriter(ex_buf, engine='xlsxwriter') as writer:
+            for k, v in maestro_upd.items(): v.to_excel(writer, sheet_name=k, index=False)
+        zf.writestr(f"01_Estadisticas_{tag_sem}.xlsx", ex_buf.getvalue())
         
-        df_top_15 = df_final[df_final['Es_Completo'] == True].sort_values('TPI_Global', ascending=False).head(15)
+        # 2. Reporte Grupal
+        doc_g = Document()
+        doc_g.add_heading(f"Reporte Semanal Club TYM - {tag_sem}", 0)
+        mins_tot = df['T_Mins'].sum()
+        p = doc_g.add_paragraph()
+        p.add_run(f"Total deportistas: {len(df)}\n").bold = True
+        p.add_run(f"Tiempo Total Club: {to_hhmmss_display(mins_tot)}")
         
-        for i, (_, row_top) in enumerate(df_top_15.iterrows(), 1):
-            r_top = tabla_top.add_row().cells
-            r_top[0].text = str(i)
-            r_top[1].text = str(row_top['Deportista'])
-            r_top[2].text = f"{row_top['TPI_Global']:.1f}%"
-            r_top[3].text = str(row_top['Tiempo Total'])
+        doc_g.add_heading("🏆 TOP 15 ADHERENCIA GLOBAL", level=1)
+        tabla = doc_g.add_table(rows=1, cols=3); tabla.style = 'Light Grid Accent 1'
+        h = tabla.rows[0].cells
+        h[0].text, h[1].text, h[2].text = 'Pos', 'Deportista', 'TPI %'
+        
+        df_top = df[df['Es_Completo']].sort_values('TPI_Global', ascending=False).head(15)
+        for i, (_, r) in enumerate(df_top.iterrows(), 1):
+            rc = tabla.add_row().cells
+            rc[0].text, rc[1].text, rc[2].text = str(i), r['Deportista'], f"{r['TPI_Global']:.1f}%"
+        
+        buf_g = io.BytesIO(); doc_g.save(buf_g)
+        zf.writestr(f"02_Reporte_General_{tag_sem}.docx", buf_g.getvalue())
 
-        # Guardar Reporte Grupal
-        buffer_grupal = io.BytesIO()
-        doc_grupal.save(buffer_grupal)
-        zf.writestr(f"02_Reporte_General_{tag_semana}.docx", buffer_grupal.getvalue())
+        # 3. Fichas Individuales
+        for _, row in df.iterrows():
+            if row['T_Mins'] > 0:
+                doc = Document()
+                doc.add_heading(f"Reporte TYM: {row['Deportista']}", 0)
+                doc.add_paragraph(f"TPI Global: {row['TPI_Global']:.1f}%")
+                
+                # Tabla Desglose
+                ti = doc.add_table(rows=1, cols=4); ti.style = 'Table Grid'
+                hi = ti.rows[0].cells
+                hi[0].text, hi[1].text, hi[2].text, hi[3].text = 'Disciplina', 'Real', 'Plan', 'TPI'
+                for d, m_col in [('Natacion', 'N_Mins'), ('Ciclismo', 'B_Mins'), ('Trote', 'R_Mins')]:
+                    rc = ti.add_row().cells
+                    rc[0].text = d
+                    rc[1].text = to_hhmmss_display(row[m_col])
+                    rc[2].text = f"{row[f'{d}_Hrs_Plan']:.1f}h"
+                    rc[3].text = f"{row[f'TPI_{d}']:.1f}%"
+                
+                # Gráfico
+                r_h = [row['N_Mins']/60, row['B_Mins']/60, row['R_Mins']/60]
+                m_h = [row['Natacion_Hrs_Plan'], row['Ciclismo_Hrs_Plan'], row['Trote_Hrs_Plan']]
+                g_buf = generar_grafico_comparativo(row['Deportista'], r_h, m_h)
+                doc.add_picture(g_buf, width=Inches(4))
+                
+                doc.add_heading("Análisis Técnico", level=1)
+                doc.add_paragraph(generar_comentario(row, 'General', 1))
+                
+                w_buf = io.BytesIO(); doc.save(w_buf)
+                zf.writestr(f"Fichas/Ficha_{clean_string(row['Deportista'])}.docx", w_buf.getvalue())
+    zip_buf.seek(0)
+    return zip_buf
 
-        # --- SUB-PROCESO 6.3: FICHAS INDIVIDUALES (CLIENTE) ---
-        # Generación masiva de reportes por cada triatleta activo
-        for index_f, row_f in df_final.iterrows():
-            # Filtro de actividad: Si sumó minutos en cualquier disciplina
-            if row_f['T_Mins'] > 0:
-                doc_indiv = Document()
-                
-                # Encabezado con Identidad
-                doc_indiv.add_heading(f"Análisis de Rendimiento: {row_f['Deportista']}", 0)
-                doc_indiv.add_paragraph(f"Semana de Entrenamiento: {tag_semana}")
-                
-                # Bloque TPI (Adherencia)
-                doc_indiv.add_heading("🎯 Adherencia al Plan", level=1)
-                p_tpi = doc_indiv.add_paragraph("Tu índice TPI Global esta semana es de: ")
-                p_tpi.add_run(f"{row_f['TPI_Global']:.1f}%").bold = True
-                
-                # Tabla de Desglose de Disciplinas
-                tabla_ind = doc_indiv.add_table(rows=1, cols=4)
-                tabla_ind.style = 'Table Grid'
-                h_ind = tabla_ind.rows[0].cells
-                h_ind[0].text, h_ind[1].text = 'Disciplina', 'Real (HH:MM)'
-                h_ind[2].text, h_ind[3].text = 'Meta (Hrs)', 'TPI %'
-                
-                for d_nom in ['Natacion', 'Ciclismo', 'Trote']:
-                    celdas_d = tabla_ind.add_row().cells
-                    celdas_d[0].text = d_nom
-                    # Mapeo de columnas internas de la Sección 3 y 4
-                    # Natacion -> N_Mins, Ciclismo -> B_Mins, Trote -> R_Mins
-                    col_mins = 'N_Mins' if d_nom == 'Natacion' else ('B_Mins' if d_nom == 'Ciclismo' else 'R_Mins')
-                    celdas_d[1].text = format_duracion_larga(row_f[col_mins])
-                    celdas_d[2].text = f"{row_f[f'{d_nom}_Hrs_Plan']:.1f}h"
-                    celdas_d[3].text = f"{row_f[f'TPI_{d_nom}']:.1f}%"
-                
-                # Inyección de Gráfico Comparativo (Sección 4)
-                reales_lista = [row_f['N_Mins']/60, row_f['B_Mins']/60, row_f['R_Mins']/60]
-                metas_lista = [row_f['Natacion_Hrs_Plan'], row_f['Ciclismo_Hrs_Plan'], row_f['Trote_Hrs_Plan']]
-                
-                buffer_grafico = generar_grafico_comparativo(row_f['Deportista'], reales_lista, metas_lista)
-                doc_indiv.add_paragraph("\n")
-                doc_indiv.add_picture(buffer_grafico, width=Inches(5))
-                
-                # Inyección de Comentarios Narrativos (Sección 3)
-                doc_indiv.add_heading("📝 Análisis Técnico", level=1)
-                # Se utiliza el rank para la frase de líder
-                ranking_atleta = int(row_f['#'])
-                comentario_texto = generar_comentario(row_f, 'General', ranking_atleta)
-                doc_indiv.add_paragraph(comentario_texto)
-                
-                # Firma de Marca
-                doc_indiv.add_paragraph("\n" + "─"*50)
-                doc_indiv.add_paragraph("Generado por Agente TYM 2026").alignment = WD_ALIGN_PARAGRAPH.CENTER
-                
-                # Empaquetado en el ZIP con nombre normalizado
-                buffer_word_ind = io.BytesIO()
-                doc_indiv.save(buffer_word_ind)
-                nombre_archivo_word = f"Fichas/Ficha_{clean_string(row_f['Deportista'])}.docx"
-                zf.writestr(nombre_archivo_word, buffer_word_ind.getvalue())
-                
-    zip_buffer_final.seek(0)
-    return zip_buffer_final
+# =============================================================================
+# SECCIÓN 7: INTERFAZ DE USUARIO Y ORQUESTACIÓN (ST)
+# =============================================================================
 
-# *****************************************************************************
-# --- 7. INTERFAZ DE USUARIO (UI) Y FLUJO PRINCIPAL ---
-# *****************************************************************************
-
-# Inicialización de estados para evitar recargas innecesarias
-if 'datos_procesados' not in st.session_state:
-    st.session_state['datos_procesados'] = None
-if 'maestro_actualizado' not in st.session_state:
-    st.session_state['maestro_actualizado'] = None
+if 'maestro_upd' not in st.session_state: st.session_state['maestro_upd'] = None
+if 'df_final' not in st.session_state: st.session_state['df_final'] = None
 
 with st.sidebar:
-    st.image("https://images.unsplash.com/photo-1517649763962-0c623066013b?q=80&w=2070", caption="TYM Performance Lab")
-    st.header("⚙️ Configuración de Entrada")
-    
-    # 📥 CARGA DE ARCHIVOS
-    archivo_maestro = st.file_uploader("1. Subir Excel Maestro (Histórico)", type=["xlsx"])
-    
+    f_maestro = st.file_uploader("Subir Maestro (.xlsx)", type=["xlsx"])
     st.divider()
-    st.subheader("🎯 Metas Globales (Plan)")
-    # Estos valores se usan si el atleta no tiene un plan individual cargado
-    col_n1, col_n2 = st.columns(2)
-    with col_n1: g_n_h = st.number_input("Natación (Hrs)", 0.0, 10.0, 3.0)
-    with col_n2: g_n_s = st.number_input("Natación (Ses)", 0, 10, 3)
-    
-    col_c1, col_c2 = st.columns(2)
-    with col_c1: g_c_h = st.number_input("Ciclismo (Hrs)", 0.0, 20.0, 5.0)
-    with col_c2: g_c_s = st.number_input("Ciclismo (Ses)", 0, 10, 3)
-    
-    col_t1, col_t2 = st.columns(2)
-    with col_t1: g_t_h = st.number_input("Trote (Hrs)", 0.0, 15.0, 3.0)
-    with col_t2: g_t_s = st.number_input("Trote (Ses)", 0, 10, 3)
-    
-    meta_global = {
-        'Natacion_Hrs_Plan': g_n_h, 'Natacion_Ses_Plan': g_n_s,
-        'Ciclismo_Hrs_Plan': g_c_h, 'Ciclismo_Ses_Plan': g_c_s,
-        'Trote_Hrs_Plan': g_t_h, 'Trote_Ses_Plan': g_t_s
+    st.subheader("Plan Global")
+    meta_g = {
+        'N_H': st.number_input("Nat (Hrs)", 3.0), 'N_S': st.number_input("Nat (Ses)", 3),
+        'B_H': st.number_input("Cic (Hrs)", 5.0), 'B_S': st.number_input("Cic (Ses)", 3),
+        'T_H': st.number_input("Tro (Hrs)", 3.0), 'T_S': st.number_input("Tro (Ses)", 3)
     }
 
-# --- CUERPO PRINCIPAL ---
-st.info("💡 Copia los datos de Strava 'Tiempo Total' y pégalos en el cuadro de abajo.")
-entrada_texto_strava = st.text_area("Datos Crudos de Strava:", height=200, placeholder="1 Francisco Ramírez 14h 22min...")
+raw_strava = st.text_area("Datos Strava:", height=200)
+tag_sem = st.text_input("Etiqueta Semana:", "Sem 08")
 
-tag_semana_actual = st.text_input("Etiqueta de la Semana (Ej: Sem 09):", "Sem 08")
-
-# Botón de Procesamiento
-if st.button("🚀 PROCESAR Y GENERAR ENTREGABLES"):
-    if not entrada_texto_strava:
-        st.error("❌ Error: No hay datos de Strava para procesar.")
-    elif not archivo_maestro:
-        st.error("❌ Error: Debes cargar el archivo Maestro para actualizar el historial.")
-    else:
-        with st.spinner("Ejecutando Pipeline de Ingeniería..."):
-            # 1. PARSING (Sección 4)
-            df_semanal = parse_raw_data(entrada_texto_strava)
+if st.button("🚀 PROCESAR JORNADA"):
+    if f_maestro and raw_strava:
+        df = parse_raw_data(raw_strava)
+        
+        # Cálculo de TPI Individual (Regla 4.3 corregida por Auditoría)
+        def aplicar_tpi(row):
+            # Natación
+            vci_n = (row['N_Mins'] / (row['Natacion_Hrs_Plan']*60)) * 100 if row['Natacion_Hrs_Plan'] > 0 else 0
+            # SEI (Disciplina): Si entrenó al menos una vez, cuenta como 1 sesión realizada frente al plan
+            sei_n = (1 / row['Natacion_Ses_Plan']) * 100 if (row['N_Mins'] > 0 and row['Natacion_Ses_Plan'] > 0) else 0
+            tpi_n = min((vci_n * 0.4) + (sei_n * 0.6), 110)
             
-            # 2. CARGA DE MAESTRO (Sección 5)
-            # Leemos todas las hojas para no perder información
-            dict_maestro_full = pd.read_excel(archivo_maestro, sheet_name=None)
+            # Ciclismo
+            vci_c = (row['B_Mins'] / (row['Ciclismo_Hrs_Plan']*60)) * 100 if row['Ciclismo_Hrs_Plan'] > 0 else 0
+            sei_c = (1 / row['Ciclismo_Ses_Plan']) * 100 if (row['B_Mins'] > 0 and row['Ciclismo_Ses_Plan'] > 0) else 0
+            tpi_c = min((vci_c * 0.4) + (sei_c * 0.6), 110)
             
-            # 3. CÁLCULO DE KPIS Y ADHERENCIA (Lógica TPI)
-            # Inyectamos las metas (esto puede expandirse a carga de Excel de Plan)
-            for d in ['Natacion', 'Ciclismo', 'Trote']:
-                df_semanal[f'{d}_Hrs_Plan'] = meta_global[f'{d}_Hrs_Plan']
-                df_semanal[f'{d}_Ses_Plan'] = meta_global[f'{d}_Ses_Plan']
+            # Trote
+            vci_t = (row['R_Mins'] / (row['Trote_Hrs_Plan']*60)) * 100 if row['Trote_Hrs_Plan'] > 0 else 0
+            sei_t = (1 / row['Trote_Ses_Plan']) * 100 if (row['R_Mins'] > 0 and row['Trote_Ses_Plan'] > 0) else 0
+            tpi_t = min((vci_t * 0.4) + (sei_t * 0.6), 110)
             
-            # Cálculo de TPI Individual (Regla 4.3)
-            def aplicar_tpi(row):
-                # Natación
-                vci_n = (row['N_Mins'] / (row['Natacion_Hrs_Plan']*60)) * 100 if row['Natacion_Hrs_Plan'] > 0 else 0
-                sei_n = 100 if row['N_Mins'] > 0 else 0 # Simplificado para esta versión
-                tpi_n = (vci_n * 0.4) + (sei_n * 0.6)
-                
-                # Ciclismo
-                vci_c = (row['B_Mins'] / (row['Ciclismo_Hrs_Plan']*60)) * 100 if row['Ciclismo_Hrs_Plan'] > 0 else 0
-                sei_c = 100 if row['B_Mins'] > 0 else 0
-                tpi_c = (vci_c * 0.4) + (sei_c * 0.6)
-                
-                # Trote
-                vci_t = (row['R_Mins'] / (row['Trote_Hrs_Plan']*60)) * 100 if row['Trote_Hrs_Plan'] > 0 else 0
-                sei_t = 100 if row['R_Mins'] > 0 else 0
-                tpi_t = (vci_t * 0.4) + (sei_t * 0.6)
-                
-                tpi_g = np.mean([tpi_n, tpi_c, tpi_t])
-                es_comp = row['N_Mins'] > 0 and row['B_Mins'] > 0 and row['R_Mins'] > 0
-                
-                return pd.Series([tpi_n, tpi_c, tpi_t, tpi_g, es_comp])
-
-            df_semanal[['TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'TPI_Global', 'Es_Completo']] = df_semanal.apply(aplicar_tpi, axis=1)
-
-            # 4. ACTUALIZACIÓN DE MAESTRO (Sección 5)
-            maestro_upd = actualizar_maestro_tym(dict_maestro_full, df_semanal, tag_semana_actual)
+            tpi_g = np.mean([tpi_n, tpi_c, tpi_t])
+            es_comp = row['N_Mins'] > 0 and row['B_Mins'] > 0 and row['R_Mins'] > 0
             
-            # 5. GENERACIÓN DE ZIP (Sección 6)
-            # Nota: Los podios OCR pueden integrarse aquí o dejarse vacíos si no hay texto OCR
-            zip_final = generar_entregables_finales(df_semanal, maestro_upd, tag_semana_actual, [], [])
+            return pd.Series([tpi_n, tpi_c, tpi_t, tpi_g, es_comp])
+
+        # Inyectar metas y aplicar cálculo
+        for d, pref in [('Natacion', 'N'), ('Ciclismo', 'B'), ('Trote', 'R')]:
+            df[f'{d}_Hrs_Plan'] = meta_g[f'{pref}_H']
+            df[f'{d}_Ses_Plan'] = meta_g[f'{pref}_S']
             
-            # Guardamos en Session State
-            st.session_state['datos_procesados'] = df_semanal
-            st.session_state['maestro_actualizado'] = zip_final
-            st.success("✅ Procesamiento Exitoso.")
+        df[['TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'TPI_Global', 'Es_Completo']] = df.apply(aplicar_tpi, axis=1)
+        
+        m_upd = actualizar_maestro_tym(pd.read_excel(f_maestro, sheet_name=None), df, tag_sem)
+        zip_p = generar_entregables_finales(df, m_upd, tag_sem)
+        
+        st.session_state['maestro_upd'] = zip_p
+        st.session_state['df_final'] = df
+        st.success("✅ Procesamiento completado.")
 
-# --- ZONA DE DESCARGAS Y VISUALIZACIÓN ---
-if st.session_state['datos_procesados'] is not None:
-    df_f = st.session_state['datos_procesados']
-    
-    st.divider()
-    st.subheader(f"🏆 Resumen de Desempeño: {tag_semana_actual}")
-    
-    col_m1, col_m2, col_m3 = st.columns(3)
-    col_m1.metric("Atletas Activos", len(df_f))
-    col_m2.metric("Triatletas Completos", len(df_f[df_f['Es_Completo'] == True]))
-    col_m3.metric("TPI Promedio Club", f"{df_f['TPI_Global'].mean():.1f}%")
-
-    # Mostrar TOP 15 en pantalla
-    st.dataframe(df_f[df_f['Es_Completo'] == True].sort_values('TPI_Global', ascending=False).head(15)[['Deportista', 'TPI_Global', 'Tiempo Total']])
-
-    # BOTÓN DE DESCARGA FINAL
-    st.download_button(
-        label="📥 DESCARGAR PACK COMPLETO (ZIP)",
-        data=st.session_state['maestro_actualizado'].getvalue(),
-        file_name=f"Pack_TYM_{tag_semana_actual}.zip",
-        mime="application/zip",
-        use_container_width=True
-    )
+if st.session_state['df_final'] is not None:
+    st.download_button("📥 DESCARGAR PACK COMPLETO", st.session_state['maestro_upd'], f"Pack_{tag_sem}.zip")
