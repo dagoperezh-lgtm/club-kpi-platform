@@ -1,5 +1,5 @@
 # *****************************************************************************
-# SECCIÓN 1: NÚCLEO DE NORMALIZACIÓN Y CONVERSIÓN ARITMÉTICA
+# SECCIÓN 1: NÚCLEO DE NORMALIZACIÓN Y CONVERSIÓN (VERSIÓN EXTENDIDA HH:MM)
 # *****************************************************************************
 # Esta sección garantiza que los nombres de los deportistas coincidan 
 # perfectamente (MatchKey) y que los tiempos de entrenamiento se conviertan 
@@ -12,9 +12,10 @@ import re
 import io
 import zipfile
 import unicodedata
-import matplotlib.pyplot as plt
 import random
-from datetime import time, datetime, timedelta
+from datetime import time, datetime
+
+# Librerías de Word
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -44,69 +45,98 @@ def clean_string(text):
     return nombre_limpio_final
 
 # -----------------------------------------------------------------------------
-# 1.2 CONVERSOR ARITMÉTICO UNIVERSAL (ELIMINA EL ERROR DE FORMATOS DE HORA)
+# 1.2 CONVERSOR ARITMÉTICO UNIVERSAL (MOTOR ADAPTADO A HH:MM Y TIMEDELTA)
 # -----------------------------------------------------------------------------
 def to_mins(valor):
     """
     Motor de Conversión de Ingeniería. 
-    Transforma cualquier entrada (Texto de Strava, Hora de Excel, Decimal) 
+    Transforma cualquier entrada (Texto HH:MM, Timedelta, Decimal) 
     en un número entero de minutos para permitir el cálculo del TPI.
     """
     # Si la celda está vacía, el valor es 0
     if pd.isna(valor):
         return 0
+        
+    # SALVAVIDAS CRÍTICO 1: Manejo nativo de objetos Timedelta de Pandas
+    # Esto evita el fallo de "0 days 02:30:00" que arrojaba ceros en las versiones previas
+    if isinstance(valor, pd.Timedelta):
+        return int(valor.total_seconds() // 60)
+    
+    # SALVAVIDAS CRÍTICO 2: El valor es un decimal de Excel (ej: 0.5 equivale a 12 horas)
+    # Excel guarda el tiempo como una fracción del día (1.0 = 24h)
+    if isinstance(valor, (float, int)):
+        if valor == 0:
+            return 0
+        if valor < 1 and valor > 0:
+            return int(round(valor * 1440))
+        return int(valor)
+        
+    # SALVAVIDAS 3: El valor ya es un objeto de tiempo de Python (datetime.time)
+    if isinstance(valor, (time, datetime)):
+        return (valor.hour * 60) + valor.minute
     
     # Convertir a texto para análisis de patrones
     s = str(valor).strip().lower()
     
     # Lista de exclusión: valores que Strava o Excel ponen cuando no hay actividad
-    lista_basura = ['--:--', '0', '', '00:00:00', 'nc', '0:00:00', 'nan', '0:00']
+    lista_basura = ['--:--', '0', '', '00:00', '00:00:00', 'nc', 'nan', 'none']
     if s in lista_basura:
         return 0
     
     try:
-        # CASO A: El valor es un decimal de Excel (ej: 0.5 equivale a 12 horas)
-        # Excel guarda el tiempo como una fracción del día (1.0 = 24h)
-        if isinstance(valor, (float, int)) and valor < 1 and valor > 0:
-            return int(round(valor * 1440))
-        
-        # CASO B: El valor ya es un objeto de tiempo de Python (datetime.time)
-        if isinstance(valor, (time, datetime)):
-            return (valor.hour * 60) + valor.minute
-            
-        # CASO C: El valor es un texto con formato de reloj (HH:MM:SS o HH:MM)
+        # Fallback de seguridad adicional para Timedeltas que llegan como texto
+        if 'days' in s or 'day' in s:
+            partes_espacio = s.split()
+            dias = int(partes_espacio[0])
+            tiempo_str = partes_espacio[-1]
+            t_parts = tiempo_str.split(':')
+            horas = int(t_parts[0])
+            minutos = int(t_parts[1].split('.')[0])
+            return (dias * 1440) + (horas * 60) + minutos
+
+        # FORMATO PRINCIPAL ESPERADO: HH:MM (Opcionalmente HH:MM:SS)
         if ':' in s:
             partes = s.split(':')
             horas = int(partes[0])
-            # Tomamos los minutos, ignorando segundos si los hay
+            # Al tomar fijamente el índice [1], funciona perfecto tanto si el archivo
+            # trae "02:30" (2 partes) como si trae "02:30:00" (3 partes).
             minutos = int(partes[1].split('.')[0])
             return (horas * 60) + minutos
             
-        # CASO D: El valor es el formato de texto de Strava (ej: '1h 22min' o '45min')
-        # Buscamos patrones de horas 'h' y minutos 'min'
+        # SALVAVIDAS 4: Formato de texto de Strava (ej: '1h 22m' o '45min')
         patron_horas = re.search(r'(\d+)\s*h', s)
-        patron_minutos = re.search(r'(\d+)\s*min', s)
+        patron_minutos = re.search(r'(\d+)\s*m', s)
         
         total_h = int(patron_horas.group(1)) * 60 if patron_horas else 0
         total_m = int(patron_minutos.group(1)) if patron_minutos else 0
         
-        return total_h + total_m
-        
+        if total_h > 0 or total_m > 0:
+            return total_h + total_m
+            
+        # SALVAVIDAS 5: Si por error de tipeo es solo un número suelto (ej: "45")
+        if s.isdigit():
+            return int(s)
+            
     except Exception:
-        # Si algo falla en la conversión, devolvemos 0 para no romper el programa
+        # Si algo falla en la conversión de esta celda, devolvemos 0 para no romper el lote
         return 0
+        
+    return 0
 
 # -----------------------------------------------------------------------------
-# 1.3 FORMATEADOR VISUAL PARA REPORTES (HH:MM:SS)
+# 1.3 FORMATEADOR VISUAL PARA REPORTES (HH:MM ESTRICTO)
 # -----------------------------------------------------------------------------
-def to_hhmmss_display(minutos):
+def to_hhmm_display(minutos):
     """
     Convierte los minutos numéricos de vuelta a un formato legible 
-    para las tablas de los reportes Word.
+    para las tablas de los reportes Word. Limitado a HH:MM por instrucción.
     """
     horas = int(minutos // 60)
     minutos_restantes = int(minutos % 60)
-    return f"{horas:02d}:{minutos_restantes:02d}:00"
+    
+    # Entrega formato 02:30 (sin los segundos finales)
+    return f"{horas:02d}:{minutos_restantes:02d}"
+
 
 # *****************************************************************************
 # SECCIÓN 2: MOTORES DE EXTRACCIÓN Y PARSEO (STRAVA Y PLAN INDIVIDUAL)
