@@ -582,7 +582,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
 # Esta sección actualiza el libro Excel Histórico preservando las semanas
 # anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y),
 # aplica la conversión a formato HH:MM estricto, reordena las columnas de 
-# semanas para evitar desastres visuales e inyecta una nueva hoja de KPIs.
+# semanas para evitar desastres visuales, inyecta la hoja de KPIs y crea
+# la hoja individual cruda de la semana actual.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
@@ -740,30 +741,94 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
     # Insertamos esta nueva hoja en el diccionario que se exportará a Excel
     dict_dfs_actualizados['KPI_Adherencia_TPI'] = df_kpi_excel
 
+    # --- NUEVA EXPANSIÓN: CREACIÓN DE LA HOJA CRUDA DE LA SEMANA (Ej: Sem 08) ---
+    # El usuario solicitó transcribir los datos reales de la semana actual en una pestaña propia.
+    df_hoja_semana = df_semana_actual[['Deportista', 'N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']].copy()
+    
+    # Formateamos visualmente a HH:MM antes de guardar
+    for col_tiempo in ['N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']:
+        df_hoja_semana[col_tiempo] = df_hoja_semana[col_tiempo].apply(to_hhmm_display)
+        
+    # Renombramos las columnas para una presentación corporativa impecable
+    df_hoja_semana = df_hoja_semana.rename(columns={
+        'Deportista': 'Nombre del Deportista',
+        'N_Mins_Real': 'Natación',
+        'B_Mins_Real': 'Bicicleta',
+        'R_Mins_Real': 'Trote',
+        'T_Mins_Real': 'Tiempo Total'
+    })
+    
+    # Guardamos la hoja con el nombre exacto de la etiqueta (Ej: "Sem 08")
+    dict_dfs_actualizados[etiqueta_semana] = df_hoja_semana
+
     return dict_dfs_actualizados
+
+
 # =============================================================================
 # FIN DE SECCIÓN 5
 # =============================================================================
 
 # *****************************************************************************
-# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (FASES 2, 3 Y 4 - EXPANSIÓN TOTAL)
+# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (GRÁFICOS, COLORES Y REPORTES)
 # *****************************************************************************
-# Esta sección toma los datos calculados y purificados para generar los archivos
-# finales. Incluye cálculos de medias históricas, redacción avanzada del reporte
-# grupal con Insights, y fichas individuales de alto valor analítico.
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+def generar_velocimetro_tpi(porcentaje):
+    """
+    Dibuja un gráfico de velocímetro (Gauge Chart) semicircular para el TPI.
+    """
+    fig, ax = plt.subplots(figsize=(4, 2), subplot_kw={'projection': 'polar'})
+    
+    # Definimos las zonas de color
+    # 0-70% (Rojo), 70-90% (Amarillo), 90-115% (Verde)
+    colors = ['#FF4C4C', '#FFD700', '#4CAF50']
+    
+    # Valores angulares (en radianes) para el semicírculo
+    theta = np.linspace(0, np.pi, 100)
+    
+    # Dibujamos las tres bandas
+    ax.fill_between(np.linspace(np.pi, np.pi - (0.7 * np.pi), 50), 0.6, 1, color=colors[0], alpha=0.6)
+    ax.fill_between(np.linspace(np.pi - (0.7 * np.pi), np.pi - (0.9 * np.pi), 50), 0.6, 1, color=colors[1], alpha=0.6)
+    ax.fill_between(np.linspace(np.pi - (0.9 * np.pi), 0, 50), 0.6, 1, color=colors[2], alpha=0.6)
+    
+    # Posición de la aguja (invertida porque 0 está a la derecha en polar)
+    # Si el porcentaje es mayor a 115, lo topamos para la gráfica
+    p_grafico = min(porcentaje, 115)
+    angulo_aguja = np.pi * (1 - (p_grafico / 115))
+    
+    # Dibujar la aguja
+    ax.plot([angulo_aguja, angulo_aguja], [0, 0.9], color='black', linewidth=3, solid_capstyle='round')
+    ax.plot(angulo_aguja, 0.9, marker='^', color='black', markersize=8)
+    ax.plot(0, 0, marker='o', color='black', markersize=10)
+    
+    # Ajustes estéticos
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+    ax.set_xticks(np.pi * np.array([1, 0.39, 0.21, 0])) # 0, 70%, 90%, 115%
+    ax.set_xticklabels(['0%', '70%', '90%', '115%'], fontsize=10, weight='bold')
+    ax.spines['polar'].set_visible(False)
+    
+    # Añadir el texto gigante en el centro
+    plt.text(0.5, 0.1, f"{porcentaje:.1f}%", transform=ax.transAxes, 
+             fontsize=20, weight='bold', ha='center', va='center')
+             
+    # Guardar en buffer temporal
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', transparent=True, bbox_inches='tight', dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
 
 def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado, etiqueta_semana):
     """
-    Construye en memoria (RAM) los tres archivos solicitados por separado:
-    1. buffer_excel: El Excel Maestro Histórico actualizado.
-    2. buffer_word_grupal: El Reporte General del Club con estructura avanzada.
-    3. buffer_zip_fichas: ZIP con fichas individuales comparativas y TPI.
+    Construye en memoria (RAM) los tres archivos solicitados por separado.
     """
     
     # =========================================================================
     # FASE 2: PRE-CÁLCULOS MATEMÁTICOS PARA ANÁLISIS COMPARATIVO
     # =========================================================================
-    # Calculamos los promedios puros del equipo en la semana actual
     promedio_equipo = {
         'Total': df_semanal_procesado['T_Mins_Real'].mean(),
         'Natacion': df_semanal_procesado['N_Mins_Real'].mean(),
@@ -771,28 +836,19 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         'Trote': df_semanal_procesado['R_Mins_Real'].mean()
     }
 
-    # Función auxiliar para buscar el promedio histórico de un atleta en el Maestro
     def obtener_media_historica(deportista_matchkey, hoja_maestro):
         df_hoja = dict_maestro_actualizado.get(hoja_maestro)
-        if df_hoja is None or df_hoja.empty or 'Promedio' not in df_hoja.columns:
-            return 0
-        
-        # Filtramos por MatchKey para asegurar precisión absoluta
+        if df_hoja is None or df_hoja.empty or 'Promedio' not in df_hoja.columns: return 0
         fila_atleta = df_hoja[df_hoja['MatchKey'] == deportista_matchkey]
         if not fila_atleta.empty:
-            # El Promedio está en HH:MM, lo pasamos a minutos para poder restarlo
-            valor_promedio = fila_atleta['Promedio'].values[0]
-            return to_mins(valor_promedio)
+            return to_mins(fila_atleta['Promedio'].values[0])
         return 0
 
     def redactar_comparacion(minutos_reales, minutos_equipo, minutos_historicos):
-        """Genera el texto exacto de comparación: 'Rendiste XX:XX MÁS/MENOS...'"""
-        # Comparación vs Equipo
         diff_equipo = minutos_reales - minutos_equipo
         txt_equipo = "MÁS" if diff_equipo >= 0 else "MENOS"
         val_equipo = to_hhmm_display(abs(diff_equipo))
         
-        # Comparación vs Historia Personal
         diff_hist = minutos_reales - minutos_historicos
         txt_hist = "MÁS" if diff_hist >= 0 else "MENOS"
         val_hist = to_hhmm_display(abs(diff_hist))
@@ -815,7 +871,6 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     num_semana = str(etiqueta_semana).replace('Sem ', '')
     doc_grupal.add_heading(f"Reporte Semanal Club Tym Triatlón \nSemana {num_semana}", 0)
     
-    # Párrafo de Bienvenida Original
     doc_grupal.add_paragraph("Bienvenidos al reporte de la Semana, donde el club decidió que la gravedad es opcional y el entrenamiento, para varios, también. Mientras unos pocos defienden el honor técnico, el resto parece competir por la mejor excusa para evitar la piscina. Antes de los números, un abrazo gigante al Loco Araya; ese fémur fracturado es solo un bache para un guerrero como tú, ¡te esperamos pronto en la ruta! Ahora, vamos a los datos, que algunos explican mucho y otros confiesan poco.")
     
     # --- 1. SECCIÓN PRINCIPAL: ADHERENCIA AL PLAN (TPI) ---
@@ -834,18 +889,16 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
 
     # --- 2. RESUMEN GENERAL ---
     doc_grupal.add_heading("🔍 Resumen General", level=1)
-    total_deportistas = len(df_semanal_procesado)
     df_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
-    minutos_totales_club = df_semanal_procesado['T_Mins_Real'].sum()
     
     p_res = doc_grupal.add_paragraph()
-    p_res.add_run(f"Total deportistas registrados: {total_deportistas}\n").bold = True
+    p_res.add_run(f"Total deportistas registrados: {len(df_semanal_procesado)}\n").bold = True
     p_res.add_run(f"Triatletas completos: {len(df_completos)}\n").bold = True
-    p_res.add_run(f"Horas totales del club: {to_hhmm_display(minutos_totales_club)}").bold = True
+    p_res.add_run(f"Horas totales del club: {to_hhmm_display(df_semanal_procesado['T_Mins_Real'].sum())}").bold = True
 
     # --- 3. TOP 5 TRIATLETAS COMPLETOS ---
     doc_grupal.add_heading("🏅 TOP 5 TRIATLETAS COMPLETOS", level=1)
-    doc_grupal.add_paragraph("\t(con CV distinto de cero)")
+    doc_grupal.add_paragraph("\t(Entrenamiento en las 3 disciplinas)")
     
     tabla_completos = doc_grupal.add_table(rows=1, cols=6)
     tabla_completos.style = 'Light Grid Accent 1'
@@ -853,12 +906,10 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     cc[0].text, cc[1].text, cc[2].text = '#', 'Deportista', 'Tiempo Total'
     cc[3].text, cc[4].text, cc[5].text = 'Natación', 'Bicicleta', 'Trote'
     
-    # Ordenamos a los completos por tiempo total para sacar los 5 mejores
     df_top_completos = df_completos.sort_values(by='T_Mins_Real', ascending=False).head(5)
     for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
         rc = tabla_completos.add_row().cells
-        rc[0].text = str(pos)
-        rc[1].text = str(fila['Deportista'])
+        rc[0].text, rc[1].text = str(pos), str(fila['Deportista'])
         rc[2].text = to_hhmm_display(fila['T_Mins_Real'])
         rc[3].text = to_hhmm_display(fila['N_Mins_Real'])
         rc[4].text = to_hhmm_display(fila['B_Mins_Real'])
@@ -881,9 +932,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         df_disc = df_semanal_procesado[df_semanal_procesado[columna] > 0].sort_values(by=columna, ascending=False).head(15)
         for pos, (_, fila) in enumerate(df_disc.iterrows(), 1):
             rc = tabla_disc.add_row().cells
-            rc[0].text = str(pos)
-            rc[1].text = str(fila['Deportista'])
-            rc[2].text = to_hhmm_display(fila[columna])
+            rc[0].text, rc[1].text, rc[2].text = str(pos), str(fila['Deportista']), to_hhmm_display(fila[columna])
 
     # --- 5. INSIGHTS ESTRATÉGICOS ---
     doc_grupal.add_heading("💡 Insights Estratégicos (O por qué hacemos lo que hacemos)", level=1)
@@ -894,15 +943,13 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     p_ins.add_run("Una lección magistral de cómo liderar el ciclismo y aun así bajar en el ranking general por el \"pequeño\" detalle de no tocar el agua. Recordatorio amistoso: el Triatlón, por definición, incluye nadar.\n")
     p_ins.add_run("Resiliencia en el Asfalto: ").bold = True
     p_ins.add_run("Mientras el volumen general bajaba, el trote sacó la cara con registros notables de carrera a pie, dejando en vergüenza los registros máximos de la semana pasada. Parece que algunos sí desayunaron ganas de correr.\n")
-    p_ins.add_run("Los Sobrevivientes: ").bold = True
-    p_ins.add_run("Un saludo especial a los que parecen haber entendido que el año tiene 52 semanas y lograron mantenerse en el Top.")
 
     buffer_word_grupal = io.BytesIO()
     doc_grupal.save(buffer_word_grupal)
     buffer_word_grupal.seek(0)
 
     # =========================================================================
-    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (ALTO VALOR ANALÍTICO)
+    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (ZIP)
     # =========================================================================
     buffer_zip_fichas = io.BytesIO()
     
@@ -914,9 +961,48 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 doc_i.add_heading(f"Análisis de Rendimiento Personal: {row_atleta['Deportista']}", 0)
                 doc_i.add_paragraph(f"Semana de Entrenamiento: {num_semana}").bold = True
                 
-                mk = row_atleta['MatchKey']
+                # --- BLOQUE 1: VELOCÍMETRO DE ADHERENCIA (TPI) ---
+                doc_i.add_heading("CUMPLIMIENTO DE PLAN (TPI)", level=2)
+                p_tpi_intro = doc_i.add_paragraph("Tu Índice de Adherencia Global esta semana:")
+                p_tpi_intro.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # --- BLOQUE 1: ANÁLISIS HISTÓRICO COMPARATIVO ---
+                # Generar e insertar la imagen del velocímetro
+                img_velocimetro = generar_velocimetro_tpi(row_atleta['TPI_Global'])
+                para_img = doc_i.add_paragraph()
+                para_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para_img.add_run().add_picture(img_velocimetro, width=Inches(3.5))
+                
+                # Tabla Semafórica de Desglose
+                tabla_desglose = doc_i.add_table(rows=1, cols=4)
+                tabla_desglose.style = 'Table Grid'
+                c_cab = tabla_desglose.rows[0].cells
+                c_cab[0].text, c_cab[1].text, c_cab[2].text, c_cab[3].text = 'Disciplina', 'Real', 'Meta', 'TPI %'
+                
+                matriz = [
+                    ('Natación', 'N_Mins_Real', 'Natacion_Plan_Hrs', 'TPI_Natacion'),
+                    ('Ciclismo', 'B_Mins_Real', 'Ciclismo_Plan_Hrs', 'TPI_Ciclismo'),
+                    ('Trote', 'R_Mins_Real', 'Trote_Plan_Hrs', 'TPI_Trote')
+                ]
+                
+                for d, c_r, c_m, c_tpi in matriz:
+                    rc = tabla_desglose.add_row().cells
+                    rc[0].text = d
+                    rc[1].text = to_hhmm_display(row_atleta[c_r])
+                    rc[2].text = f"{row_atleta[c_m]:.1f}h"
+                    
+                    # SEMAFORIZACIÓN DEL TEXTO
+                    run_tpi = rc[3].paragraphs[0].add_run(f"{row_atleta[c_tpi]:.1f}%")
+                    run_tpi.bold = True
+                    tpi_val = row_atleta[c_tpi]
+                    if tpi_val < 70:
+                        run_tpi.font.color.rgb = RGBColor(255, 0, 0) # Rojo
+                    elif tpi_val <= 90:
+                        run_tpi.font.color.rgb = RGBColor(204, 153, 0) # Amarillo Oscuro
+                    else:
+                        run_tpi.font.color.rgb = RGBColor(0, 153, 0) # Verde
+
+                # --- BLOQUE 2: ANÁLISIS HISTÓRICO COMPARATIVO ---
+                mk = row_atleta['MatchKey']
                 bloques_analisis = [
                     ('TIEMPO TOTAL', 'T_Mins_Real', 'Total', 'TIEMPO TOTAL'),
                     ('NATACIÓN', 'N_Mins_Real', 'Natacion', 'NATACION'),
@@ -928,56 +1014,24 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                     doc_i.add_heading(titulo, level=2)
                     p_dato = doc_i.add_paragraph()
                     p_dato.add_run(f"Volumen actual: {to_hhmm_display(row_atleta[col_real])} ").bold = True
-                    
                     hist_mins = obtener_media_historica(mk, hoja_historia)
                     texto_comp = redactar_comparacion(row_atleta[col_real], promedio_equipo[llave_equipo], hist_mins)
                     p_dato.add_run(texto_comp)
 
-                # --- BLOQUE 2: ADHERENCIA AL PLAN (TPI) ---
-                doc_i.add_heading("CUMPLIMIENTO DE PLAN (TPI)", level=2)
-                p_tpi = doc_i.add_paragraph()
-                p_tpi.add_run("Tu Índice de Adherencia (TPI Global) esta semana: ").bold = True
-                p_tpi.add_run(f"{row_atleta['TPI_Global']:.1f}%")
-                
-                tabla_desglose = doc_i.add_table(rows=1, cols=4)
-                tabla_desglose.style = 'Table Grid'
-                c_cab = tabla_desglose.rows[0].cells
-                c_cab[0].text, c_cab[1].text, c_cab[2].text, c_cab[3].text = 'Disciplina', 'Tiempo Real', 'Meta (Plan)', 'TPI %'
-                
-                matriz_disciplinas = [
-                    ('Natación', 'N_Mins_Real', 'Natacion_Plan_Hrs', 'TPI_Natacion'),
-                    ('Ciclismo', 'B_Mins_Real', 'Ciclismo_Plan_Hrs', 'TPI_Ciclismo'),
-                    ('Trote', 'R_Mins_Real', 'Trote_Plan_Hrs', 'TPI_Trote')
-                ]
-                
-                for nombre_disc, c_r, c_m, c_tpi in matriz_disciplinas:
-                    rc = tabla_desglose.add_row().cells
-                    rc[0].text = nombre_disc
-                    rc[1].text = to_hhmm_display(row_atleta[c_r])
-                    rc[2].text = f"{row_atleta[c_m]:.1f}h"
-                    rc[3].text = f"{row_atleta[c_tpi]:.1f}%"
-
                 # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
                 doc_i.add_heading("Evaluación Técnica", level=2)
-                posicion_ranking = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
-                rango_actual = posicion_ranking[0] + 1 if posicion_ranking else 99
-                
-                comentario_experto = generar_comentario(row_atleta, 'General', rango_actual)
-                doc_i.add_paragraph(comentario_experto)
+                pos = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
+                rango_actual = pos[0] + 1 if pos else 99
+                doc_i.add_paragraph(generar_comentario(row_atleta, 'General', rango_actual))
                 
                 doc_i.add_paragraph("\n──────────────────────────────────────────────────")
                 doc_i.add_paragraph("Generado por Plataforma TYM Performance")
                 
                 buffer_word_individual = io.BytesIO()
                 doc_i.save(buffer_word_individual)
-                nombre_archivo_seguro = f"Reporte_{clean_string(row_atleta['Deportista'])}.docx"
-                archivo_zip.writestr(nombre_archivo_seguro, buffer_word_individual.getvalue())
+                archivo_zip.writestr(f"Reporte_{clean_string(row_atleta['Deportista'])}.docx", buffer_word_individual.getvalue())
 
     buffer_zip_fichas.seek(0)
-    
-    # =========================================================================
-    # 6.4: DEVOLUCIÓN DEL DICCIONARIO DE ENTREGABLES
-    # =========================================================================
     return {
         'excel_maestro': buffer_excel,
         'word_grupal': buffer_word_grupal,
@@ -995,7 +1049,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
 # 7.1: CONFIGURACIÓN VISUAL DEL PANEL CENTRAL Y SIDEBAR
 # -----------------------------------------------------------------------------
 st.title("🏆 Plataforma de Rendimiento TYM v3.0")
-st.markdown("Generador de KPIs de adherencia (TPI) y Motor de Integridad de Excel.")
+st.markdown("Generador de KPIs de adherencia (TPI), Motor Narrativo e Integridad de Excel.")
 
 with st.sidebar:
     st.header("⚙️ 1. Entradas de Sistema")
@@ -1039,7 +1093,7 @@ if st.button("🚀 PROCESAR EXCEL Y GENERAR ENTREGABLES", use_container_width=Tr
     # Verificación de seguridad: No avanzar sin los archivos vitales
     if archivo_maestro is not None and archivo_strava is not None:
         
-        with st.spinner("Purificando datos y calculando Adherencia TYM..."):
+        with st.spinner("Purificando datos, calculando Adherencia TYM y generando gráficas..."):
             try:
                 # --- FASE 1: EXTRACCIÓN (Sección 2) ---
                 df_datos_reales = procesar_strava_excel(archivo_strava)
@@ -1049,14 +1103,12 @@ if st.button("🚀 PROCESAR EXCEL Y GENERAR ENTREGABLES", use_container_width=Tr
                 df_calculado_kpi = calcular_kpis_tym(df_datos_reales, df_datos_plan, metas_globales_sidebar)
                 
                 # --- FASE 3: CONSOLA DE AUDITORÍA (DEBUG VISUAL) ---
-                # Mostrar en pantalla los resultados antes de empaquetarlos para validar que no haya ceros
+                # Mostrar en pantalla los resultados antes de empaquetarlos para validar precisión
                 with st.expander("🕵️‍♂️ CONSOLA DE AUDITORÍA (VERIFICAR ANTES DE DESCARGAR)", expanded=True):
                     st.markdown("**1. Lectura Pura de Strava (Mins Reales Extraídos):**")
-                    # Mostramos los minutos procesados para confirmar que la función to_mins hizo su trabajo
                     st.dataframe(df_calculado_kpi[['Deportista', 'N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']].head(10))
                     
                     st.markdown("**2. Cálculo de KPIs (Adherencia):**")
-                    # Mostramos los porcentajes resultantes y la bandera de Triatleta Completo
                     st.dataframe(df_calculado_kpi[['Deportista', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'TPI_Global', 'Es_Completo']].head(10))
 
                 # --- FASE 4: PERSISTENCIA DEL MAESTRO (Sección 5) ---
@@ -1068,17 +1120,16 @@ if st.button("🚀 PROCESAR EXCEL Y GENERAR ENTREGABLES", use_container_width=Tr
                 )
                 
                 # --- FASE 5: GENERACIÓN DE ENTREGABLES SEPARADOS (Sección 6) ---
-                # Guardamos el diccionario con los tres buffers en la memoria de la sesión
                 st.session_state['diccionario_entregables'] = generar_entregables_separados(
                     df_calculado_kpi, 
                     diccionario_maestro_actualizado, 
                     etiqueta_semana_input
                 )
                 
-                st.success("✅ ¡Procesamiento completado con éxito! Revisa la consola de auditoría y descarga tus archivos.")
+                st.success("✅ ¡Procesamiento completado con éxito! Gráficos generados. Revisa la consola y descarga tus archivos.")
                 
             except Exception as error_critico:
-                st.error(f"❌ Error de Integridad durante el procesamiento: {str(error_critico)}")
+                st.error(f"❌ Error crítico durante el procesamiento: {str(error_critico)}")
     else:
         st.warning("⚠️ Debes cargar el Maestro Histórico y el Excel de Strava en el panel lateral para iniciar.")
 
@@ -1089,7 +1140,6 @@ if st.session_state['diccionario_entregables'] is not None:
     st.markdown("### 📥 Descarga de Archivos Procesados")
     st.markdown("Selecciona el entregable que deseas descargar:")
     
-    # Creamos tres columnas para organizar los botones visualmente
     columna_excel, columna_word, columna_zip = st.columns(3)
     
     with columna_excel:
