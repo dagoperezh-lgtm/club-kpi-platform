@@ -302,45 +302,66 @@ def generar_entregables_finales(df_final, dict_maestro_upd, tag_semana):
     return zip_buffer
 
 # =============================================================================
-# SECCIÓN 7: INTERFAZ Y ORQUESTACIÓN (Sincronización Total)
+# SECCIÓN 7: INTERFAZ DE USUARIO Y ORQUESTACIÓN (Sincronización Total)
 # =============================================================================
 
-# ... (Sidebar y inputs se mantienen igual)
+# 1. Definición estática del Sidebar (Para que nunca desaparezca)
+with st.sidebar:
+    st.header("⚙️ Entradas de Ingeniería")
+    f_maestro = st.file_uploader("1. Excel Maestro (Historial)", type=["xlsx"])
+    f_semanal = st.file_uploader("2. Excel Semanal (Reales)", type=["xlsx"])
+    f_plan = st.file_uploader("3. Excel Plan (Individual)", type=["xlsx"])
+    st.divider()
+    st.subheader("🎯 Metas Globales (Fallback)")
+    
+    # Definimos el diccionario meta_g explícitamente aquí
+    meta_g = {
+        'N_H': st.number_input("Natación (Hrs)", 3.0), 
+        'N_S': st.number_input("Natación (Ses)", 3),
+        'B_H': st.number_input("Ciclismo (Hrs)", 5.0), 
+        'B_S': st.number_input("Ciclismo (Ses)", 3),
+        'T_H': st.number_input("Trote (Hrs)", 3.0), 
+        'T_S': st.number_input("Trote (Ses)", 3)
+    }
 
+# 2. Inputs en el cuerpo principal
+tag_semana = st.text_input("Etiqueta de la Semana", "Sem 08")
+
+# 3. Lógica de Procesamiento
 if st.button("🚀 PROCESAR JORNADA COMPLETA"):
     if f_maestro and f_semanal:
+        # A. Carga de datos
         df_s = procesar_excel_semanal_robusto(f_semanal)
-        df_p = procesar_excel_plan_individual(f_plan)
         df_s['MatchKey'] = df_s['Deportista'].apply(clean_string)
         
-        # Merge con Plan Individual para priorizar sus metas
+        # B. Carga de Plan Individual (si existe)
+        df_p = pd.read_excel(f_plan) if f_plan else pd.DataFrame(columns=['MatchKey'])
         if not df_p.empty:
+            df_p['MatchKey'] = df_p.iloc[:, 0].apply(clean_string)
+            # Unimos para tener metas individuales disponibles en la misma fila
             df_s = pd.merge(df_s, df_p, on='MatchKey', how='left', suffixes=('', '_plan'))
             
+        # C. Función interna de cálculo de TPI (Regla 4.3 corregida)
         def aplicar_tpi_logica(row):
             res = {}
-            # Diccionario de traducción interno para evitar KeyError
-            mapeo_global = {
-                'Natacion': 'N',
-                'Ciclismo': 'B',
-                'Trote': 'R'
-            }
+            mapeo = {'Natacion': 'N', 'Ciclismo': 'B', 'Trote': 'R'}
             
-            for d, pref in mapeo_global.items():
-                # PRIORIDAD: 
-                # 1. Columna del Excel de Plan (ej: Natacion_Hrs_Plan_plan)
-                # 2. Valor del Sidebar (meta_g)
+            for d, pref in mapeo.items():
+                # Búsqueda jerárquica de metas para evitar KeyError
+                # 1. ¿Está en el Excel de Plan?
                 h_plan = row.get(f'{d}_Hrs_Plan_plan')
                 if pd.isna(h_plan): 
-                    h_plan = meta_g.get(f'{pref}_H', 0)
+                    h_plan = meta_g.get(f'{pref}_H', 0) # Fallback al Sidebar
                 
                 s_plan = row.get(f'{d}_Ses_Plan_plan')
                 if pd.isna(s_plan): 
-                    s_plan = meta_g.get(f'{pref}_S', 1) # Evitamos división por cero con 1
+                    s_plan = meta_g.get(f'{pref}_S', 1) # Fallback al Sidebar (mínimo 1)
                 
-                real_m = row[f'{pref}_Mins']
+                # Identificación de columna de minutos reales (Sección 4)
+                col_real = f'{"N" if d=="Natacion" else ("B" if d=="Ciclismo" else "R")}_Mins'
+                real_m = row.get(col_real, 0)
                 
-                # Cálculos de Ingeniería (Regla 4.3)
+                # Cálculo TPI: (Volumen * 0.4) + (Sesiones * 0.6)
                 vci = (real_m / (h_plan * 60)) * 100 if h_plan > 0 else 0
                 sei = (100 / s_plan) if (real_m > 0 and s_plan > 0) else 0
                 
@@ -348,17 +369,31 @@ if st.button("🚀 PROCESAR JORNADA COMPLETA"):
                 res[f'{d}_Hrs_Plan'] = h_plan
                 res[f'{d}_Ses_Plan'] = s_plan
 
+            # KPI Global y Bandera de Atleta Completo
             res['TPI_Global'] = np.mean([res['TPI_Natacion'], res['TPI_Ciclismo'], res['TPI_Trote']])
             res['Es_Completo'] = row['N_Mins']>0 and row['B_Mins']>0 and row['R_Mins']>0
             return pd.Series(res)
 
-        # Ejecución del Pipeline
-        df_final = pd.concat([df_s, df_s.apply(aplicar_tpi_logica, axis=1)], axis=1)
+        # D. Ejecución del Pipeline
+        # Concatenamos los resultados del TPI al DataFrame original
+        df_tpi = df_s.apply(aplicar_tpi_logica, axis=1)
+        df_final = pd.concat([df_s, df_tpi], axis=1)
         
-        # Actualización del Maestro (Sección 5)
+        # E. Actualización del Maestro (Sección 5)
         dict_maestro_full = pd.read_excel(f_maestro, sheet_name=None)
         m_upd = actualizar_maestro_tym(dict_maestro_full, df_final, tag_semana)
         
-        # Generación de Entregables (Sección 6)
-        st.session_state['zip_ready'] = generar_entregables_finales(df_final, m_upd, tag_semana)
-        st.success("✅ Procesamiento completado sin errores de llave.")
+        # F. Generación de ZIP (Sección 6)
+        st.session_state['zip_out'] = generar_entregables_finales(df_final, m_upd, tag_semana)
+        st.success("✅ Procesamiento completado con éxito.")
+    else:
+        st.error("⚠️ Debes cargar al menos el Maestro y el Semanal en el Sidebar.")
+
+# 4. Botón de descarga (Persistente)
+if 'zip_out' in st.session_state and st.session_state['zip_out'] is not None:
+    st.download_button(
+        "📥 DESCARGAR PACK FINAL (ZIP)", 
+        st.session_state['zip_out'], 
+        f"Pack_TYM_{tag_semana}.zip",
+        use_container_width=True
+    )
