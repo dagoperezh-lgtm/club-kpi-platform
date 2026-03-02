@@ -214,132 +214,129 @@ def procesar_excel_plan_individual(archivo_plan):
     # Estandarización de nombres de columnas de plan (Hrs y Ses)
     return df_p
 
-# =============================================================================
-# SECCIÓN 5: ACTUALIZADOR DE MAESTRO (VERSION EXTENDIDA - NO SINTETIZAR)
-# Objetivo: Garantizar la integridad histórica y la actualización multihoja.
-# =============================================================================
+# *****************************************************************************
+# --- 5. MOTOR DE ACTUALIZACIÓN DEL MAESTRO (VERSION EXTENDIDA - GOLD) ---
+# *****************************************************************************
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, nombre_nueva_columna):
     """
-    Realiza la actualización del libro Maestro preservando semanas anteriores.
-    Esta versión incluye blindaje total contra KeyError y desalineación de columnas.
+    Actualiza el libro Maestro con integridad total. 
+    Resuelve colisiones de columnas duplicadas (Sem 08_x) y descalce de nombres de hojas.
     """
-    # Diccionario donde reconstruiremos el libro Excel final
+    # Diccionario contenedor para el nuevo libro Excel
     dict_dfs_actualizados = {}
     
-    # --- PASO 5.1: PREPARACIÓN DE LA IDENTIDAD ---
-    # Aseguramos que el DataFrame procesado de la semana tenga la llave MatchKey
-    if 'MatchKey' not in df_semana_actual.columns:
-        if 'Deportista' in df_semana_actual.columns:
-            df_semana_actual['MatchKey'] = df_semana_actual['Deportista'].apply(clean_string)
-        else:
-            # Fallback de ingeniería: usar la primera columna disponible como identidad
-            df_semana_actual['MatchKey'] = df_semana_actual.iloc[:, 0].apply(clean_string)
-            
-    # Normalizamos los nombres de las pestañas originales para encontrarlas sin importar tildes
-    hojas_en_maestro_normalizadas = {clean_string(k): k for k in dict_dfs_originales.keys()}
+    # 1. PREPARACIÓN DE LA SEMANA ACTUAL
+    # Aseguramos que la semana actual tenga la llave de cruce limpia
+    df_semana_actual['MatchKey'] = df_semana_actual['Deportista'].apply(clean_string)
     
-    # Matriz de mapeo: Nombre Hoja Destino -> Posibles nombres de columna origen
-    # Esto garantiza que si la columna se llama 'T_Mins' o 'Tiempo Total', el sistema la tome.
-    mapeo_columnas_robusto = {
-        'TIEMPO TOTAL': ['T_Mins', 'Tiempo Total', 'TIEMPO TOTAL', 'T_MINS'],
-        'NATACION': ['N_Mins', 'Natación', 'NATACION', 'N_MINS'],
-        'BICICLETA': ['B_Mins', 'Bicicleta', 'BICICLETA', 'B_MINS'],
-        'TROTE': ['R_Mins', 'Trote', 'TROTE', 'R_MINS'],
-        'CV': ['CV', 'COEFICIENTE VARIACION', 'cv']
+    # 2. MAPEO FLEXIBLE DE DISCIPLINAS
+    # Mapeamos los nombres técnicos a todas las posibles variantes de nombres de hojas
+    # Esto soluciona el problema de 'Ciclismo' vs 'Bicicleta'
+    mapeo_disciplinas = {
+        'TIEMPO TOTAL': 'T_Mins',
+        'NATACION': 'N_Mins',
+        'BICICLETA': 'B_Mins',
+        'CICLISMO': 'B_Mins',  # Soporte para ambas nomenclaturas
+        'TROTE': 'R_Mins',
+        'RUNNING': 'R_Mins',
+        'CV': 'CV'
     }
     
-    # --- PASO 5.2: BUCLE DE ACTUALIZACIÓN POR HOJA ---
-    for llave_hoja_norm, lista_candidatas in mapeo_columnas_robusto.items():
-        # Verificamos si la hoja existe en el Excel Maestro cargado por el usuario
-        llave_original_maestro = hojas_en_maestro_normalizadas.get(llave_hoja_norm)
+    # Normalizamos los nombres de las hojas que ya existen en el Maestro
+    hojas_maestro_normalizadas = {clean_string(k): k for k in dict_dfs_originales.keys()}
+    
+    # 3. PROCESAMIENTO HOJA POR HOJA
+    for nombre_hoja_maestro in dict_dfs_originales.keys():
+        llave_norm = clean_string(nombre_hoja_maestro)
         
-        if llave_original_maestro:
-            # Extraemos la hoja actual para trabajar sobre ella
-            df_maestro_hoja = dict_dfs_originales[llave_original_maestro].copy()
+        # ¿Es esta una de las hojas que debemos actualizar con datos de Strava?
+        if llave_norm in mapeo_disciplinas:
+            col_origen_datos = mapeo_disciplinas[llave_norm]
+            df_hoja_historia = dict_dfs_originales[nombre_hoja_maestro].copy()
             
-            # Buscamos en el DataFrame procesado cuál columna contiene los datos de esta disciplina
-            columna_datos_semanales = None
-            for candidata in lista_candidatas:
-                if candidata in df_semana_actual.columns:
-                    columna_datos_semanales = candidata
-                    break
+            # Identificamos la columna de identidad (Nombre/Deportista)
+            col_id = 'Nombre' if 'Nombre' in df_hoja_historia.columns else \
+                     ('Deportista' if 'Deportista' in df_hoja_historia.columns else df_hoja_historia.columns[0])
             
-            # Si encontramos datos para esta hoja en la semana actual
-            if columna_datos_semanales is not None:
-                # Detectamos la columna de identidad del Maestro (Nombre o Deportista)
-                col_nombre_maestro = 'Nombre' if 'Nombre' in df_maestro_hoja.columns else \
-                                    ('Deportista' if 'Deportista' in df_maestro_hoja.columns else df_maestro_hoja.columns[0])
-                
-                # Generamos MatchKey en el histórico para asegurar el cruce exacto
-                df_maestro_hoja['MatchKey'] = df_maestro_hoja[col_nombre_maestro].apply(clean_string)
-                
-                # Preparamos el DataFrame de "novedades" (lo que vamos a inyectar)
-                df_novedad_inyectar = df_semana_actual[['MatchKey', columna_datos_semanales]].copy()
-                
-                # --- REGLA 7: TRATAMIENTO DE TIEMPO PARA EXCEL ---
-                if llave_hoja_norm != 'CV':
-                    # Convertimos minutos reales a la fracción decimal que Excel entiende (1.0 = 24h)
-                    df_novedad_inyectar[nombre_nueva_columna] = df_novedad_inyectar[columna_datos_semanales].apply(
-                        lambda x: to_mins(x) / 1440.0
-                    )
-                else:
-                    # En la hoja de Coeficiente de Variación, el valor es directo
-                    df_novedad_inyectar[nombre_nueva_columna] = df_novedad_inyectar[columna_datos_semanales]
-                
-                # Limpiamos duplicados en la novedad para no corromper el merge
-                df_novedad_inyectar = df_novedad_inyectar.drop_duplicates(subset=['MatchKey'], keep='first')
-                
-                # --- PASO 5.3: MERGE ATÓMICO (EL CORAZÓN DEL HISTÓRICO) ---
-                # how='outer' garantiza que se mantienen las columnas Sem 01, Sem 02, etc.
-                df_fusionado = pd.merge(
-                    df_maestro_hoja, 
-                    df_novedad_inyectar[['MatchKey', nombre_nueva_columna]], 
-                    on='MatchKey', 
-                    how='outer'
-                )
-                
-                # --- SOLUCIÓN AL KEYERROR: VERIFICACIÓN DE EXISTENCIA ---
-                # Si tras el merge la columna no existe (porque no hubo datos), la creamos explícitamente
-                if nombre_nueva_columna not in df_fusionado.columns:
-                    df_fusionado[nombre_nueva_columna] = 0.0
-                
-                # --- PASO 5.4: TRATAMIENTO DE NULOS Y NUEVOS ATLETAS ---
-                # Rellenamos con 0 (o NC) a quienes no tuvieron actividad esta semana
-                valor_relleno = 'NC' if llave_hoja_norm == 'CV' else 0.0
-                df_fusionado[nombre_nueva_columna] = df_fusionado[nombre_nueva_columna].fillna(valor_relleno)
-                
-                # Si el merge trajo atletas nuevos, su columna de 'Nombre' estará vacía
-                mask_nombre_vacio = df_fusionado[col_nombre_maestro].isna()
-                # Mapeamos desde el df de la semana usando MatchKey como puente
-                diccionario_identidades = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
-                df_fusionado.loc[mask_nombre_vacio, col_nombre_maestro] = df_fusionado.loc[mask_nombre_vacio, 'MatchKey'].map(diccionario_identidades)
-                
-                # Almacenamos la hoja actualizada descartando la llave técnica
-                dict_dfs_actualizados[llave_original_maestro] = df_fusionado.drop(columns=['MatchKey'], errors='ignore')
+            # Generamos MatchKey en el historial
+            df_hoja_historia['MatchKey'] = df_hoja_historia[col_id].apply(clean_string)
+            
+            # --- SOLUCIÓN AL ERROR DE DUPLICADOS (Sem 08_x) ---
+            # Si la columna 'Sem 08' ya existe en el Maestro, la eliminamos antes del merge
+            # para que la nueva data sea la que mande y no se creen sufijos _x / _y
+            if nombre_nueva_columna in df_hoja_historia.columns:
+                df_hoja_historia = df_hoja_historia.drop(columns=[nombre_nueva_columna])
+            
+            # Preparamos la novedad de la semana
+            df_novedad = df_semana_actual[['MatchKey', col_origen_datos]].copy()
+            
+            # Conversión a formato Excel (Fracción de día) excepto para CV
+            if col_origen_datos != 'CV':
+                df_novedad[nombre_nueva_columna] = df_novedad[col_origen_datos].apply(lambda x: x / 1440.0)
             else:
-                # Si no hay datos esta semana para esta disciplina, preservamos la hoja original intacta
-                dict_dfs_actualizados[llave_original_maestro] = dict_dfs_originales[llave_original_maestro]
-        
-    # --- PASO 5.5: PRESERVACIÓN DE HOJAS ESTÁTICAS ---
-    # Recorremos el libro original para salvar hojas como 'Calendario' o 'Número de Semana'
-    for k_orig in dict_dfs_originales.keys():
-        if clean_string(k_orig) not in mapeo_columnas_robusto:
-            dict_dfs_actualizados[k_orig] = dict_dfs_originales[k_orig]
+                df_novedad[nombre_nueva_columna] = df_novedad[col_origen_datos]
+            
+            # Eliminamos duplicados en la novedad por seguridad
+            df_novedad = df_novedad.drop_duplicates(subset=['MatchKey'], keep='first')
+            
+            # --- MERGE DE INTEGRIDAD ---
+            df_final_hoja = pd.merge(
+                df_hoja_historia, 
+                df_novedad[['MatchKey', nombre_nueva_columna]], 
+                on='MatchKey', 
+                how='outer'
+            )
+            
+            # --- GESTIÓN DE ATLETAS NUEVOS Y NULOS ---
+            # Rellenar nombres para atletas que no estaban en el maestro
+            mask_nuevos = df_final_hoja[col_id].isna()
+            mapeo_nombres_nuevos = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
+            df_final_hoja.loc[mask_nuevos, col_id] = df_final_hoja.loc[mask_nuevos, 'MatchKey'].map(mapeo_nombres_nuevos)
+            
+            # Rellenar con 0 (o NC) a quienes no entrenaron esta semana
+            valor_vacio = 'NC' if col_origen_datos == 'CV' else 0
+            df_final_hoja[nombre_nueva_columna] = df_final_hoja[nombre_nueva_columna].fillna(valor_vacio)
+            
+            # --- RECALCULO DE TOTALES (Opcional según estructura) ---
+            # Si existen columnas de Promedio o Acumulado, se actualizan aquí
+            # Buscamos todas las columnas que empiecen con 'Sem'
+            cols_semanas = [c for c in df_final_hoja.columns if str(c).startswith('Sem')]
+            
+            if 'Tiempo Acumulado' in df_final_hoja.columns and col_origen_datos != 'CV':
+                df_final_hoja['Tiempo Acumulado'] = df_final_hoja[cols_semanas].sum(axis=1)
+                
+            if 'Promedio' in df_final_hoja.columns and col_origen_datos != 'CV':
+                # El promedio solo cuenta semanas con datos > 0 si se desea, 
+                # aquí lo hacemos sobre el total de semanas procesadas.
+                df_final_hoja['Promedio'] = df_final_hoja[cols_semanas].mean(axis=1)
+
+            # Guardamos la hoja limpia
+            dict_dfs_actualizados[nombre_hoja_maestro] = df_final_hoja.drop(columns=['MatchKey'], errors='ignore')
+            
+        else:
+            # Si la hoja no es de una disciplina (ej: Calendario, Número de Semana), la pasamos intacta
+            dict_dfs_actualizados[nombre_hoja_maestro] = dict_dfs_originales[nombre_hoja_maestro]
             
     return dict_dfs_actualizados
 
 def save_maestro_to_excel(dict_dfs):
     """
-    Exportación binaria multi-pestaña para descarga directa.
-    Utiliza el motor xlsxwriter para mayor robustez en el manejo de memoria.
+    Genera el archivo Excel binario manteniendo todas las pestañas.
     """
-    output_buffer = io.BytesIO()
-    with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
-        for nombre_pestana, df_data in dict_dfs.items():
-            df_data.to_excel(writer, sheet_name=nombre_pestana, index=False)
+    output_binario = io.BytesIO()
+    # Usamos xlsxwriter para asegurar que los formatos numéricos se mantengan
+    with pd.ExcelWriter(output_binario, engine='xlsxwriter') as writer:
+        for nombre_hoja, df_contenido in dict_dfs.items():
+            df_contenido.to_excel(writer, sheet_name=nombre_hoja, index=False)
             
-    return output_buffer.getvalue()
+            # Auto-ajuste de columnas básico (Opcional)
+            worksheet = writer.sheets[nombre_hoja]
+            for i, col in enumerate(df_contenido.columns):
+                column_len = max(df_contenido[col].astype(str).str.len().max(), len(col)) + 2
+                worksheet.set_column(i, i, column_len)
+                
+    return output_binario.getvalue()
 
 # =============================================================================
 # FIN DE SECCIÓN 5
