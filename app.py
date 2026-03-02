@@ -577,17 +577,18 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
 
 
 # *****************************************************************************
-# SECCIÓN 5: MOTOR DE PERSISTENCIA Y ACTUALIZACIÓN DEL MAESTRO
+# SECCIÓN 5: MOTOR DE PERSISTENCIA Y ACTUALIZACIÓN DEL MAESTRO (FASE 1 - EXPANDIDA)
 # *****************************************************************************
 # Esta sección actualiza el libro Excel Histórico preservando las semanas
-# anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y)
-# y aplica la "vacuna" para purificar los tipos de datos antiguos SIN destruirlos.
+# anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y),
+# aplica la conversión a formato HH:MM estricto, reordena las columnas de 
+# semanas para evitar desastres visuales e inyecta una nueva hoja de KPIs.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
     Actualiza hoja por hoja el archivo Maestro.
     Garantiza que la información se indexe correctamente a cada atleta
-    y que la historia no se borre ni se convierta en ceros.
+    y que la historia no se borre ni se convierta en ceros, formateando todo a HH:MM.
     """
     dict_dfs_actualizados = {}
 
@@ -625,31 +626,32 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
             # Generamos la llave maestra (MatchKey) para un cruce seguro
             df_hoja_historia['MatchKey'] = df_hoja_historia[col_identidad_maestro].apply(clean_string)
 
-            # --- BLINDAJE ANTI-DUPLICADOS (Evita Sem 08_x) ---
-            # Si el usuario procesa la misma semana dos veces, borramos la columna antes de escribir
-            if etiqueta_semana in df_hoja_historia.columns:
-                df_hoja_historia = df_hoja_historia.drop(columns=[etiqueta_semana])
+            # --- BLINDAJE ANTI-DUPLICADOS Y LIMPIEZA DE BASURA ---
+            # Si el usuario procesa la misma semana dos veces, o si quedaron restos de merges
+            # anteriores (como Sem 08_x, Sem 08_y), los eliminamos de raíz.
+            columnas_basura = [c for c in df_hoja_historia.columns if etiqueta_semana in str(c) or str(c).endswith('_x') or str(c).endswith('_y')]
+            if columnas_basura:
+                df_hoja_historia = df_hoja_historia.drop(columns=columnas_basura)
 
-            # --- SALVACIÓN Y PURIFICACIÓN DEL HISTORIAL (La Vacuna anti-ceros) ---
+            # --- SALVACIÓN Y PURIFICACIÓN DEL HISTORIAL (Fase de Cálculo en Minutos) ---
             # Identificamos todas las columnas históricas que empiezan con 'Sem'
             columnas_semanas_viejas = [c for c in df_hoja_historia.columns if str(c).startswith('Sem')]
 
             for col_vieja in columnas_semanas_viejas:
                 if columna_datos_a_extraer != 'TPI_Global':
-                    # Si es tiempo, usamos nuestra función to_mins de la Sección 1 y dividimos por 1440
-                    # Esto garantiza que "02:30" o Timedeltas no se borren, sino que se conviertan seguro.
-                    df_hoja_historia[col_vieja] = df_hoja_historia[col_vieja].apply(to_mins) / 1440.0
+                    # TRUCO MAESTRO: Transformamos todo el historial a MINUTOS NUMÉRICOS.
+                    # No lo dividimos por 1440 para evitar decimales. Los minutos enteros se pueden sumar.
+                    df_hoja_historia[col_vieja] = df_hoja_historia[col_vieja].apply(to_mins)
                 else:
-                    # Si es la hoja CV (TPI_Global), son porcentajes, forzamos numérico sin to_mins
+                    # Si es la hoja CV (TPI_Global), son porcentajes, forzamos numérico
                     df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0)
 
             # --- PREPARACIÓN DE LA NOVEDAD (DATOS DE LA SEMANA) ---
             df_novedad = df_semana_actual[['MatchKey', columna_datos_a_extraer]].copy()
 
             if columna_datos_a_extraer != 'TPI_Global':
-                df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer].apply(
-                    lambda x: (x / 1440.0) if pd.notna(x) else 0.0
-                )
+                # La novedad también se inyecta en minutos enteros (sin decimales)
+                df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer]
             else:
                 df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer] / 100.0
 
@@ -657,8 +659,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
             df_novedad = df_novedad.drop_duplicates(subset=['MatchKey'], keep='first')
 
             # --- UNIÓN DEL HISTÓRICO CON LA NOVEDAD ---
-            # Usamos OUTER JOIN. Si hay un atleta nuevo en Strava que no estaba en el Maestro,
-            # esto garantiza que se agregue al final de la lista y no se pierda.
+            # Usamos OUTER JOIN para asegurar que los atletas nuevos se agreguen al final de la lista.
             df_actualizado = pd.merge(
                 df_hoja_historia,
                 df_novedad[['MatchKey', etiqueta_semana]],
@@ -666,7 +667,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
                 how='outer'
             )
 
-            # Rellenamos los vacíos generados por cruces de atletas antiguos/nuevos
+            # Rellenamos los vacíos generados por cruces de atletas antiguos/nuevos con 0 minutos
             df_actualizado[etiqueta_semana] = df_actualizado[etiqueta_semana].fillna(0.0)
 
             # --- GESTIÓN DE ATLETAS NUEVOS ---
@@ -678,195 +679,305 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
             for col_vieja in columnas_semanas_viejas:
                 df_actualizado[col_vieja] = df_actualizado[col_vieja].fillna(0.0)
 
+            # --- ORDENAMIENTO DE COLUMNAS DE SEMANAS (Arregla el desastre visual) ---
+            # Separamos las columnas que no son semanas (Nombre, Promedio, Acumulado, etc.)
+            columnas_fijas = [c for c in df_actualizado.columns if not str(c).startswith('Sem')]
+            # Ordenamos alfabéticamente las semanas para que Sem 08 quede antes de Sem 09 y no al final
+            columnas_temporales = sorted([c for c in df_actualizado.columns if str(c).startswith('Sem')])
+            # Reensamblamos el DataFrame en el orden correcto
+            df_actualizado = df_actualizado[columnas_fijas + columnas_temporales]
+
             # --- RECALCULO DE MÉTRICAS (TIEMPO ACUMULADO) ---
+            # Ahora que las semanas están ordenadas, capturamos la lista final
             columnas_todas_semanas = [c for c in df_actualizado.columns if str(c).startswith('Sem')]
 
             if columna_datos_a_extraer != 'TPI_Global':
                 if 'Tiempo Acumulado' in df_actualizado.columns:
-                    # Esta suma ya no explotará porque todas las celdas fueron forzadas a números puros
+                    # Sumamos minutos enteros matemáticamente (Cero errores de Excel)
                     df_actualizado['Tiempo Acumulado'] = df_actualizado[columnas_todas_semanas].sum(axis=1)
 
                 if 'Promedio' in df_actualizado.columns:
                     df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1)
 
+            # --- CONVERSIÓN VISUAL FINAL (DE MINUTOS A FORMATO HH:MM) ---
+            # Una vez terminada la matemática, transformamos todo a texto "HH:MM" para que Excel lo muestre perfecto
+            if columna_datos_a_extraer != 'TPI_Global':
+                columnas_a_formatear = columnas_todas_semanas.copy()
+                if 'Tiempo Acumulado' in df_actualizado.columns: columnas_a_formatear.append('Tiempo Acumulado')
+                if 'Promedio' in df_actualizado.columns: columnas_a_formatear.append('Promedio')
+                
+                for col_fmt in columnas_a_formatear:
+                    # Usamos la función de la Sección 1 que formatea estrictamente a "HH:MM"
+                    df_actualizado[col_fmt] = df_actualizado[col_fmt].apply(to_hhmm_display)
+
             # Guardamos la pestaña actualizada eliminando la llave técnica
             dict_dfs_actualizados[nombre_hoja_original] = df_actualizado.drop(columns=['MatchKey'], errors='ignore')
 
         else:
-            # Si la hoja no es de disciplinas (ej: Calendario), la traspasamos intacta
+            # Si la hoja no es de disciplinas (ej: Calendario, Número de Semana), la traspasamos intacta
             dict_dfs_actualizados[nombre_hoja_original] = dict_dfs_originales[nombre_hoja_original]
 
+    # --- INYECCIÓN DEL KPI DE ADHERENCIA EN EL EXCEL ---
+    # Creamos una hoja nueva dedicada exclusivamente al TPI, como solicitó el usuario.
+    df_kpi_excel = df_semana_actual[['Deportista', 'TPI_Global', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'Es_Completo']].copy()
+    
+    # Formateamos los porcentajes para que sean visualmente perfectos
+    for col_tpi in ['TPI_Global', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote']:
+        df_kpi_excel[col_tpi] = df_kpi_excel[col_tpi].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "0.0%")
+        
+    df_kpi_excel['Es_Completo'] = df_kpi_excel['Es_Completo'].apply(lambda x: "Sí" if x else "No")
+    
+    # Renombramos para darle presentación corporativa
+    df_kpi_excel = df_kpi_excel.rename(columns={
+        'Deportista': 'Nombre del Deportista',
+        'TPI_Global': 'Adherencia Global',
+        'TPI_Natacion': 'Adherencia Natación',
+        'TPI_Ciclismo': 'Adherencia Ciclismo',
+        'TPI_Trote': 'Adherencia Trote',
+        'Es_Completo': f'Completó Plan ({etiqueta_semana})'
+    })
+    
+    # Insertamos esta nueva hoja en el diccionario que se exportará a Excel
+    dict_dfs_actualizados['KPI_Adherencia_TPI'] = df_kpi_excel
+
     return dict_dfs_actualizados
-
-
 # =============================================================================
 # FIN DE SECCIÓN 5
 # =============================================================================
 
 # *****************************************************************************
-# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (DESCARGAS SEPARADAS)
+# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (FASES 2, 3 Y 4 - EXPANSIÓN TOTAL)
 # *****************************************************************************
 # Esta sección toma los datos calculados y purificados para generar los archivos
-# finales. Cumpliendo con los requerimientos operativos, genera tres buffers
-# separados en memoria para permitir descargas independientes en la interfaz.
+# finales. Incluye cálculos de medias históricas, redacción avanzada del reporte
+# grupal con Insights, y fichas individuales de alto valor analítico.
 
 def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado, etiqueta_semana):
     """
     Construye en memoria (RAM) los tres archivos solicitados por separado:
     1. buffer_excel: El Excel Maestro Histórico actualizado.
-    2. buffer_word_grupal: El Reporte General del Club.
-    3. buffer_zip_fichas: Un archivo ZIP que contiene únicamente las fichas individuales.
-    
-    Devuelve un diccionario con los tres objetos para que la interfaz los procese.
+    2. buffer_word_grupal: El Reporte General del Club con estructura avanzada.
+    3. buffer_zip_fichas: ZIP con fichas individuales comparativas y TPI.
     """
     
-    # ---------------------------------------------------------------------
+    # =========================================================================
+    # FASE 2: PRE-CÁLCULOS MATEMÁTICOS PARA ANÁLISIS COMPARATIVO
+    # =========================================================================
+    # Calculamos los promedios puros del equipo en la semana actual
+    promedio_equipo = {
+        'Total': df_semanal_procesado['T_Mins_Real'].mean(),
+        'Natacion': df_semanal_procesado['N_Mins_Real'].mean(),
+        'Ciclismo': df_semanal_procesado['B_Mins_Real'].mean(),
+        'Trote': df_semanal_procesado['R_Mins_Real'].mean()
+    }
+
+    # Función auxiliar para buscar el promedio histórico de un atleta en el Maestro
+    def obtener_media_historica(deportista_matchkey, hoja_maestro):
+        df_hoja = dict_maestro_actualizado.get(hoja_maestro)
+        if df_hoja is None or df_hoja.empty or 'Promedio' not in df_hoja.columns:
+            return 0
+        
+        # Filtramos por MatchKey para asegurar precisión absoluta
+        fila_atleta = df_hoja[df_hoja['MatchKey'] == deportista_matchkey]
+        if not fila_atleta.empty:
+            # El Promedio está en HH:MM, lo pasamos a minutos para poder restarlo
+            valor_promedio = fila_atleta['Promedio'].values[0]
+            return to_mins(valor_promedio)
+        return 0
+
+    def redactar_comparacion(minutos_reales, minutos_equipo, minutos_historicos):
+        """Genera el texto exacto de comparación: 'Rendiste XX:XX MÁS/MENOS...'"""
+        # Comparación vs Equipo
+        diff_equipo = minutos_reales - minutos_equipo
+        txt_equipo = "MÁS" if diff_equipo >= 0 else "MENOS"
+        val_equipo = to_hhmm_display(abs(diff_equipo))
+        
+        # Comparación vs Historia Personal
+        diff_hist = minutos_reales - minutos_historicos
+        txt_hist = "MÁS" if diff_hist >= 0 else "MENOS"
+        val_hist = to_hhmm_display(abs(diff_hist))
+        
+        return f"Rendiste {val_equipo} {txt_equipo} que el promedio del equipo. Vs Tu Media Histórica: {val_hist} {txt_hist}."
+
+    # =========================================================================
     # 6.1: GENERACIÓN DEL EXCEL MAESTRO ACTUALIZADO
-    # ---------------------------------------------------------------------
+    # =========================================================================
     buffer_excel = io.BytesIO()
-    # Usamos xlsxwriter para mayor estabilidad y soporte multifichas
     with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
         for nombre_hoja, df_hoja in dict_maestro_actualizado.items():
             df_hoja.to_excel(writer, sheet_name=nombre_hoja, index=False)
-            
-    # Reiniciamos el puntero del buffer para que Streamlit pueda leerlo desde el principio
     buffer_excel.seek(0)
     
-    # ---------------------------------------------------------------------
-    # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD)
-    # ---------------------------------------------------------------------
+    # =========================================================================
+    # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD AVANZADO)
+    # =========================================================================
     doc_grupal = Document()
-    doc_grupal.add_heading(f"Reporte Semanal Club TYM - {etiqueta_semana}", 0)
+    num_semana = str(etiqueta_semana).replace('Sem ', '')
+    doc_grupal.add_heading(f"Reporte Semanal Club Tym Triatlón \nSemana {num_semana}", 0)
     
-    # --- Cálculo de Métricas Grupales Auditadas ---
-    total_deportistas_activos = len(df_semanal_procesado)
+    # Párrafo de Bienvenida Original
+    doc_grupal.add_paragraph("Bienvenidos al reporte de la Semana, donde el club decidió que la gravedad es opcional y el entrenamiento, para varios, también. Mientras unos pocos defienden el honor técnico, el resto parece competir por la mejor excusa para evitar la piscina. Antes de los números, un abrazo gigante al Loco Araya; ese fémur fracturado es solo un bache para un guerrero como tú, ¡te esperamos pronto en la ruta! Ahora, vamos a los datos, que algunos explican mucho y otros confiesan poco.")
     
-    # Filtramos a los triatletas completos (aquellos con la bandera Es_Completo == True)
-    # Esta bandera fue estrictamente calculada en la Sección 4
-    df_triatletas_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
-    total_completos = len(df_triatletas_completos)
+    # --- 1. SECCIÓN PRINCIPAL: ADHERENCIA AL PLAN (TPI) ---
+    doc_grupal.add_heading("📈 1. ADHERENCIA AL PLAN (TPI GLOBAL)", level=1)
+    doc_grupal.add_paragraph("💡 Índice de Rendimiento TYM (TPI): Este indicador refleja el nivel de compromiso del deportista con su planificación semanal. Un 100% indica ejecución perfecta de horas y sesiones. A continuación, los 15 deportistas con mayor disciplina táctica de la semana.")
     
-    # Sumamos el tiempo total real procesado por todo el club
+    tabla_tpi = doc_grupal.add_table(rows=1, cols=3)
+    tabla_tpi.style = 'Light Grid Accent 1'
+    c_tpi = tabla_tpi.rows[0].cells
+    c_tpi[0].text, c_tpi[1].text, c_tpi[2].text = 'Posición', 'Deportista', 'TPI Global %'
+    
+    df_ranking_tpi = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
+    for pos, (_, fila) in enumerate(df_ranking_tpi.iterrows(), 1):
+        rc = tabla_tpi.add_row().cells
+        rc[0].text, rc[1].text, rc[2].text = str(pos), str(fila['Deportista']), f"{fila['TPI_Global']:.1f}%"
+
+    # --- 2. RESUMEN GENERAL ---
+    doc_grupal.add_heading("🔍 Resumen General", level=1)
+    total_deportistas = len(df_semanal_procesado)
+    df_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
     minutos_totales_club = df_semanal_procesado['T_Mins_Real'].sum()
     
-    # --- Redacción del Párrafo de Resumen ---
-    parrafo_resumen = doc_grupal.add_paragraph()
-    parrafo_resumen.add_run("Total deportistas registrados esta semana: ").bold = True
-    parrafo_resumen.add_run(f"{total_deportistas_activos}\n")
-    
-    parrafo_resumen.add_run("Triatletas con entrenamiento completo (N/B/R): ").bold = True
-    parrafo_resumen.add_run(f"{total_completos}\n")
-    
-    parrafo_resumen.add_run("Volumen total acumulado por el club: ").bold = True
-    # Usamos el nuevo formato estricto de horas y minutos (HH:MM)
-    parrafo_resumen.add_run(f"{to_hhmm_display(minutos_totales_club)}")
+    p_res = doc_grupal.add_paragraph()
+    p_res.add_run(f"Total deportistas registrados: {total_deportistas}\n").bold = True
+    p_res.add_run(f"Triatletas completos: {len(df_completos)}\n").bold = True
+    p_res.add_run(f"Horas totales del club: {to_hhmm_display(minutos_totales_club)}").bold = True
 
-    # --- Construcción de la Tabla de Podio TPI (TOP 15) ---
-    doc_grupal.add_heading("🏆 TOP 15 ADHERENCIA (TPI GLOBAL)", level=1)
+    # --- 3. TOP 5 TRIATLETAS COMPLETOS ---
+    doc_grupal.add_heading("🏅 TOP 5 TRIATLETAS COMPLETOS", level=1)
+    doc_grupal.add_paragraph("\t(con CV distinto de cero)")
     
-    tabla_podio = doc_grupal.add_table(rows=1, cols=3)
-    tabla_podio.style = 'Light Grid Accent 1'
+    tabla_completos = doc_grupal.add_table(rows=1, cols=6)
+    tabla_completos.style = 'Light Grid Accent 1'
+    cc = tabla_completos.rows[0].cells
+    cc[0].text, cc[1].text, cc[2].text = '#', 'Deportista', 'Tiempo Total'
+    cc[3].text, cc[4].text, cc[5].text = 'Natación', 'Bicicleta', 'Trote'
     
-    # Encabezados de la tabla
-    celdas_encabezado = tabla_podio.rows[0].cells
-    celdas_encabezado[0].text = 'Posición'
-    celdas_encabezado[1].text = 'Deportista'
-    celdas_encabezado[2].text = 'TPI Global %'
-    
-    # Ordenamos a los deportistas por su TPI Global de mayor a menor y sacamos los primeros 15
-    df_ranking_top15 = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
-    
-    # Iteramos sobre los 15 mejores para rellenar las filas
-    posicion = 1
-    for index, fila_deportista in df_ranking_top15.iterrows():
-        celdas_fila = tabla_podio.add_row().cells
-        celdas_fila[0].text = str(posicion)
-        celdas_fila[1].text = str(fila_deportista['Deportista'])
-        # Formateamos el TPI con un decimal
-        celdas_fila[2].text = f"{fila_deportista['TPI_Global']:.1f}%"
-        posicion += 1
+    # Ordenamos a los completos por tiempo total para sacar los 5 mejores
+    df_top_completos = df_completos.sort_values(by='T_Mins_Real', ascending=False).head(5)
+    for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
+        rc = tabla_completos.add_row().cells
+        rc[0].text = str(pos)
+        rc[1].text = str(fila['Deportista'])
+        rc[2].text = to_hhmm_display(fila['T_Mins_Real'])
+        rc[3].text = to_hhmm_display(fila['N_Mins_Real'])
+        rc[4].text = to_hhmm_display(fila['B_Mins_Real'])
+        rc[5].text = to_hhmm_display(fila['R_Mins_Real'])
 
-    # Guardar el Reporte Grupal en su propio buffer independiente
+    # --- 4. TOP 15 POR DISCIPLINAS ---
+    disciplinas = [
+        ("🏊‍♂️ TOP 15 NATACIÓN", 'N_Mins_Real'),
+        ("🚴‍♂️ TOP 15 CICLISMO", 'B_Mins_Real'),
+        ("🏃‍♂️ TOP 15 TROTE", 'R_Mins_Real')
+    ]
+    
+    for titulo, columna in disciplinas:
+        doc_grupal.add_heading(titulo, level=1)
+        tabla_disc = doc_grupal.add_table(rows=1, cols=3)
+        tabla_disc.style = 'Light Grid Accent 1'
+        cd = tabla_disc.rows[0].cells
+        cd[0].text, cd[1].text, cd[2].text = 'Posición', 'Deportista', 'Tiempo'
+        
+        df_disc = df_semanal_procesado[df_semanal_procesado[columna] > 0].sort_values(by=columna, ascending=False).head(15)
+        for pos, (_, fila) in enumerate(df_disc.iterrows(), 1):
+            rc = tabla_disc.add_row().cells
+            rc[0].text = str(pos)
+            rc[1].text = str(fila['Deportista'])
+            rc[2].text = to_hhmm_display(fila[columna])
+
+    # --- 5. INSIGHTS ESTRATÉGICOS ---
+    doc_grupal.add_heading("💡 Insights Estratégicos (O por qué hacemos lo que hacemos)", level=1)
+    p_ins = doc_grupal.add_paragraph()
+    p_ins.add_run("Bici-dependencia Crónica: ").bold = True
+    p_ins.add_run("El ciclismo sigue siendo el \"hijo favorito\". Representa la mayor parte del tiempo total del club. Básicamente, si le quitamos las bicicletas a este equipo, el reporte semanal cabría en una servilleta.\n")
+    p_ins.add_run("El \"Efecto Claudio\": ").bold = True
+    p_ins.add_run("Una lección magistral de cómo liderar el ciclismo y aun así bajar en el ranking general por el \"pequeño\" detalle de no tocar el agua. Recordatorio amistoso: el Triatlón, por definición, incluye nadar.\n")
+    p_ins.add_run("Resiliencia en el Asfalto: ").bold = True
+    p_ins.add_run("Mientras el volumen general bajaba, el trote sacó la cara con registros notables de carrera a pie, dejando en vergüenza los registros máximos de la semana pasada. Parece que algunos sí desayunaron ganas de correr.\n")
+    p_ins.add_run("Los Sobrevivientes: ").bold = True
+    p_ins.add_run("Un saludo especial a los que parecen haber entendido que el año tiene 52 semanas y lograron mantenerse en el Top.")
+
     buffer_word_grupal = io.BytesIO()
     doc_grupal.save(buffer_word_grupal)
     buffer_word_grupal.seek(0)
 
-    # ---------------------------------------------------------------------
-    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (EMPAQUETADAS EN UN ZIP)
-    # ---------------------------------------------------------------------
+    # =========================================================================
+    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (ALTO VALOR ANALÍTICO)
+    # =========================================================================
     buffer_zip_fichas = io.BytesIO()
     
     with zipfile.ZipFile(buffer_zip_fichas, "a", zipfile.ZIP_DEFLATED) as archivo_zip:
         
-        # Iteramos sobre absolutamente todos los deportistas procesados
         for index, row_atleta in df_semanal_procesado.iterrows():
-            
-            # Solo generamos ficha si el deportista registró al menos 1 minuto de actividad
             if row_atleta['T_Mins_Real'] > 0:
-                doc_individual = Document()
-                doc_individual.add_heading(f"Análisis de Rendimiento: {row_atleta['Deportista']}", 0)
+                doc_i = Document()
+                doc_i.add_heading(f"Análisis de Rendimiento Personal: {row_atleta['Deportista']}", 0)
+                doc_i.add_paragraph(f"Semana de Entrenamiento: {num_semana}").bold = True
                 
-                # Resumen Principal
-                parrafo_tpi = doc_individual.add_paragraph()
-                parrafo_tpi.add_run("Tu Índice de Adherencia (TPI Global) esta semana: ").bold = True
-                parrafo_tpi.add_run(f"{row_atleta['TPI_Global']:.1f}%")
+                mk = row_atleta['MatchKey']
                 
-                # --- Construcción de Tabla de Desglose por Disciplina ---
-                tabla_desglose = doc_individual.add_table(rows=1, cols=4)
+                # --- BLOQUE 1: ANÁLISIS HISTÓRICO COMPARATIVO ---
+                bloques_analisis = [
+                    ('TIEMPO TOTAL', 'T_Mins_Real', 'Total', 'TIEMPO TOTAL'),
+                    ('NATACIÓN', 'N_Mins_Real', 'Natacion', 'NATACION'),
+                    ('CICLISMO', 'B_Mins_Real', 'Ciclismo', 'BICICLETA'),
+                    ('TROTE', 'R_Mins_Real', 'Trote', 'TROTE')
+                ]
+                
+                for titulo, col_real, llave_equipo, hoja_historia in bloques_analisis:
+                    doc_i.add_heading(titulo, level=2)
+                    p_dato = doc_i.add_paragraph()
+                    p_dato.add_run(f"Volumen actual: {to_hhmm_display(row_atleta[col_real])} ").bold = True
+                    
+                    hist_mins = obtener_media_historica(mk, hoja_historia)
+                    texto_comp = redactar_comparacion(row_atleta[col_real], promedio_equipo[llave_equipo], hist_mins)
+                    p_dato.add_run(texto_comp)
+
+                # --- BLOQUE 2: ADHERENCIA AL PLAN (TPI) ---
+                doc_i.add_heading("CUMPLIMIENTO DE PLAN (TPI)", level=2)
+                p_tpi = doc_i.add_paragraph()
+                p_tpi.add_run("Tu Índice de Adherencia (TPI Global) esta semana: ").bold = True
+                p_tpi.add_run(f"{row_atleta['TPI_Global']:.1f}%")
+                
+                tabla_desglose = doc_i.add_table(rows=1, cols=4)
                 tabla_desglose.style = 'Table Grid'
+                c_cab = tabla_desglose.rows[0].cells
+                c_cab[0].text, c_cab[1].text, c_cab[2].text, c_cab[3].text = 'Disciplina', 'Tiempo Real', 'Meta (Plan)', 'TPI %'
                 
-                celdas_cabecera_ind = tabla_desglose.rows[0].cells
-                celdas_cabecera_ind[0].text = 'Disciplina'
-                celdas_cabecera_ind[1].text = 'Tiempo Real'
-                celdas_cabecera_ind[2].text = 'Meta (Plan)'
-                celdas_cabecera_ind[3].text = 'TPI %'
-                
-                # Mapeo manual y explícito para evitar fallos de lectura de columnas
                 matriz_disciplinas = [
                     ('Natación', 'N_Mins_Real', 'Natacion_Plan_Hrs', 'TPI_Natacion'),
                     ('Ciclismo', 'B_Mins_Real', 'Ciclismo_Plan_Hrs', 'TPI_Ciclismo'),
                     ('Trote', 'R_Mins_Real', 'Trote_Plan_Hrs', 'TPI_Trote')
                 ]
                 
-                # Rellenamos una fila por cada disciplina
-                for nombre_disc, col_real, col_meta, col_tpi in matriz_disciplinas:
-                    celdas_datos = tabla_desglose.add_row().cells
-                    celdas_datos[0].text = nombre_disc
-                    # Formateo visual del tiempo real a HH:MM (Sin segundos)
-                    celdas_datos[1].text = to_hhmm_display(row_atleta[col_real])
-                    # Formateo visual de la meta en horas
-                    celdas_datos[2].text = f"{row_atleta[col_meta]:.1f}h"
-                    # Formateo visual del TPI individual
-                    celdas_datos[3].text = f"{row_atleta[col_tpi]:.1f}%"
+                for nombre_disc, c_r, c_m, c_tpi in matriz_disciplinas:
+                    rc = tabla_desglose.add_row().cells
+                    rc[0].text = nombre_disc
+                    rc[1].text = to_hhmm_display(row_atleta[c_r])
+                    rc[2].text = f"{row_atleta[c_m]:.1f}h"
+                    rc[3].text = f"{row_atleta[c_tpi]:.1f}%"
 
-                # --- Inyección del Motor Narrativo (Sección 3) ---
-                doc_individual.add_heading("Evaluación Técnica", level=1)
-                
-                # Determinamos el ranking de este atleta para saber si es el líder
-                posicion_ranking = df_ranking_top15.index[df_ranking_top15['Deportista'] == row_atleta['Deportista']].tolist()
+                # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
+                doc_i.add_heading("Evaluación Técnica", level=2)
+                posicion_ranking = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
                 rango_actual = posicion_ranking[0] + 1 if posicion_ranking else 99
                 
-                # Generamos e inyectamos la frase experta
                 comentario_experto = generar_comentario(row_atleta, 'General', rango_actual)
-                doc_individual.add_paragraph(comentario_experto)
+                doc_i.add_paragraph(comentario_experto)
                 
-                # Guardamos la ficha en un buffer temporal
+                doc_i.add_paragraph("\n──────────────────────────────────────────────────")
+                doc_i.add_paragraph("Generado por Plataforma TYM Performance")
+                
                 buffer_word_individual = io.BytesIO()
-                doc_individual.save(buffer_word_individual)
-                
-                # Usamos clean_string para asegurar que el nombre del archivo sea seguro para Windows/Mac
-                nombre_archivo_seguro = f"Ficha_{clean_string(row_atleta['Deportista'])}.docx"
-                
-                # Insertamos el Word directamente en la raíz del archivo ZIP
+                doc_i.save(buffer_word_individual)
+                nombre_archivo_seguro = f"Reporte_{clean_string(row_atleta['Deportista'])}.docx"
                 archivo_zip.writestr(nombre_archivo_seguro, buffer_word_individual.getvalue())
 
-    # Reiniciamos el puntero del buffer ZIP
     buffer_zip_fichas.seek(0)
     
-    # ---------------------------------------------------------------------
+    # =========================================================================
     # 6.4: DEVOLUCIÓN DEL DICCIONARIO DE ENTREGABLES
-    # ---------------------------------------------------------------------
-    # Devolvemos los tres canales por separado para que la interfaz genere 3 botones
+    # =========================================================================
     return {
         'excel_maestro': buffer_excel,
         'word_grupal': buffer_word_grupal,
