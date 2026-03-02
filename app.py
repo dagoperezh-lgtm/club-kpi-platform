@@ -222,127 +222,122 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, nombre_nueva_c
     """
     Actualiza el libro Maestro con integridad total. 
     Limpia duplicados previos, purifica tipos de datos y sincroniza todas las disciplinas.
-    Garantiza que no aparezcan columnas tipo 'Sem 08_x'.
+    Resuelve el KeyError asegurando que las columnas de origen existan antes de indexar.
     """
-    # Diccionario contenedor para reconstruir el libro Excel final
     dict_dfs_actualizados = {}
     
-    # 1. PREPARACIÓN DE LA SEMANA ACTUAL (NOVEDAD)
+    # 1. PREPARACIÓN DE LA SEMANA ACTUAL
     # Generamos la llave de cruce MatchKey para todos los deportistas de la semana
     df_semana_actual['MatchKey'] = df_semana_actual['Deportista'].apply(clean_string)
     
-    # 2. MAPEO EXTENDIDO DE DISCIPLINAS (NORMALIZACIÓN DE HOJAS)
-    # Mapeamos los nombres técnicos a todas las posibles variantes de nombres de hojas
-    # Esto asegura que 'Ciclismo' y 'Trote' se actualicen correctamente.
+    # 2. MAPEO EXTENDIDO DE DISCIPLINAS (PARA EVITAR HOJAS SIN ACTUALIZAR)
+    # Vinculamos el nombre de la hoja con los posibles nombres de columnas generados en el proceso
     mapeo_hojas_a_datos = {
-        'TIEMPO TOTAL': 'T_Mins',
-        'NATACION': 'N_Mins',
-        'NATACIÓN': 'N_Mins',
-        'BICICLETA': 'B_Mins',
-        'CICLISMO': 'B_Mins',
-        'TROTE': 'R_Mins',
-        'RUNNING': 'R_Mins',
-        'CV': 'CV'
+        'TIEMPO TOTAL': ['T_Mins', 'Tiempo Total', 'T_MINS'],
+        'NATACION': ['N_Mins', 'Natación', 'N_MINS'],
+        'NATACIÓN': ['N_Mins', 'Natación', 'N_MINS'],
+        'BICICLETA': ['B_Mins', 'Bicicleta', 'B_MINS'],
+        'CICLISMO': ['B_Mins', 'Bicicleta', 'B_MINS'], 
+        'TROTE': ['R_Mins', 'Trote', 'R_MINS'],
+        'RUNNING': ['R_Mins', 'Trote', 'R_MINS'],
+        'CV': ['CV', 'cv']
     }
     
-    # Identificamos las hojas reales disponibles en el archivo maestro cargado
-    hojas_en_maestro = {clean_string(nombre_hoja): nombre_hoja for nombre_hoja in dict_dfs_originales.keys()}
+    # Identificamos las hojas reales disponibles en el Excel cargado
+    hojas_reales_en_excel = {clean_string(nombre): nombre for nombre in dict_dfs_originales.keys()}
     
     # 3. PROCESAMIENTO SISTEMÁTICO DE CADA HOJA DEL MAESTRO
     for nombre_hoja_original in dict_dfs_originales.keys():
         nombre_normalizado = clean_string(nombre_hoja_original)
         
-        # Verificamos si la hoja actual es una de las que requiere actualización de datos
+        # Verificamos si la hoja actual es una de las que requiere actualización
         if nombre_normalizado in mapeo_hojas_a_datos:
-            columna_datos_strava = mapeo_hojas_a_datos[nombre_normalizado]
+            lista_posibles_columnas = mapeo_hojas_a_datos[nombre_normalizado]
             
-            # Extraemos la historia actual de esta pestaña
-            df_hoja_historia = dict_dfs_originales[nombre_hoja_original].copy()
+            # Buscamos cuál de los nombres de columna existe realmente en df_semana_actual
+            columna_datos_strava = next((c for c in lista_posibles_columnas if c in df_semana_actual.columns), None)
             
-            # Identificamos la columna de identidad (Nombre, Deportista o la primera)
-            col_id_identidad = 'Nombre' if 'Nombre' in df_hoja_historia.columns else \
-                               ('Deportista' if 'Deportista' in df_hoja_historia.columns else df_hoja_historia.columns[0])
-            
-            # Generamos MatchKey en el historial para asegurar el cruce exacto
-            df_hoja_historia['MatchKey'] = df_hoja_historia[col_id_identidad].apply(clean_string)
-            
-            # --- SOLUCIÓN AL ERROR DE DUPLICADOS (Sem 08_x / Sem 08_y) ---
-            # Si en el Maestro ya existe una columna con el mismo nombre (ej: Sem 08), 
-            # la eliminamos antes de realizar el merge para evitar sufijos.
-            if nombre_nueva_columna in df_hoja_historia.columns:
-                df_hoja_historia = df_hoja_historia.drop(columns=[nombre_nueva_columna])
-            
-            # --- PURIFICACIÓN DE DATOS HISTÓRICOS (EVITA EL TYPEERROR) ---
-            # Convertimos todas las columnas de semanas previas a formato numérico puro.
-            # Esto elimina strings como "00:00:00" que rompen las sumas.
-            columnas_semanas_previas = [c for c in df_hoja_historia.columns if str(c).startswith('Sem')]
-            for col_prev in columnas_semanas_previas:
-                # 'coerce' convierte textos no numéricos a NaN, luego fillna(0) los vuelve sumables
-                df_hoja_historia[col_prev] = pd.to_numeric(df_hoja_historia[col_prev], errors='coerce').fillna(0.0)
-            
-            # --- PREPARACIÓN DE LA NOVEDAD ---
-            df_novedad_semanal = df_semana_actual[['MatchKey', columna_datos_strava]].copy()
-            
-            if columna_datos_strava != 'CV':
-                # Convertimos minutos reales a la fracción decimal de Excel (Regla 7: 1.0 = 24h)
-                df_novedad_semanal[nombre_nueva_columna] = df_novedad_semanal[columna_datos_strava].apply(
-                    lambda x: to_mins(x) / 1440.0
-                )
-            else:
-                # En la hoja de Coeficiente de Variación el valor se pasa directo
-                df_novedad_semanal[nombre_nueva_columna] = df_novedad_semanal[columna_datos_strava]
-            
-            # Limpieza de duplicados en la novedad antes de la unión
-            df_novedad_semanal = df_novedad_semanal.drop_duplicates(subset=['MatchKey'], keep='first')
-            
-            # --- UNIÓN DE DATOS (MERGE OUTER) ---
-            # how='outer' garantiza que no perdemos atletas antiguos ni nuevos
-            df_final_hoja = pd.merge(
-                df_hoja_historia, 
-                df_novedad_semanal[['MatchKey', nombre_nueva_columna]], 
-                on='MatchKey', 
-                how='outer'
-            )
-            
-            # Rellenamos con 0 a quienes no tuvieron registro esta semana
-            df_final_hoja[nombre_nueva_columna] = df_final_hoja[nombre_nueva_columna].fillna(0.0)
-            
-            # --- GESTIÓN DE IDENTIDADES PARA ATLETAS NUEVOS ---
-            # Si un atleta es nuevo, su celda de Nombre estará vacía (NaN) tras el merge
-            mask_identidad_vacia = df_final_hoja[col_id_identidad].isna()
-            mapeo_identidades_semanal = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
-            df_final_hoja.loc[mask_identidad_vacia, col_id_identidad] = df_final_hoja.loc[mask_identidad_vacia, 'MatchKey'].map(mapeo_identidades_semanal)
-            
-            # --- RECALCULO DE TOTALES Y PROMEDIOS (ROBUSTO) ---
-            # Ahora que todo es numérico, recalculamos los indicadores de la temporada
-            columnas_todas_semanas = [c for c in df_final_hoja.columns if str(c).startswith('Sem')]
-            
-            if columna_datos_strava != 'CV':
-                if 'Tiempo Acumulado' in df_final_hoja.columns:
-                    df_final_hoja['Tiempo Acumulado'] = df_final_hoja[columnas_todas_semanas].sum(axis=1)
+            if columna_datos_strava:
+                df_hoja_historia = dict_dfs_originales[nombre_hoja_original].copy()
                 
-                if 'Promedio' in df_final_hoja.columns:
-                    df_final_hoja['Promedio'] = df_final_hoja[columnas_todas_semanas].mean(axis=1)
-            
-            # Guardamos la hoja procesada y eliminamos la columna MatchKey técnica
-            dict_dfs_actualizados[nombre_hoja_original] = df_final_hoja.drop(columns=['MatchKey'], errors='ignore')
-            
+                # Identificamos la columna de identidad (Nombre, Deportista o la primera)
+                col_id_identidad = 'Nombre' if 'Nombre' in df_hoja_historia.columns else \
+                                   ('Deportista' if 'Deportista' in df_hoja_historia.columns else df_hoja_historia.columns[0])
+                
+                # Generamos MatchKey en el historial para el cruce exacto
+                df_hoja_historia['MatchKey'] = df_hoja_historia[col_id_identidad].apply(clean_string)
+                
+                # --- SOLUCIÓN AL ERROR DE DUPLICADOS (Sem 08_x / Sem 08_y) ---
+                # Si en el Maestro ya existe una columna con el mismo nombre, la eliminamos antes de escribir
+                if nombre_nueva_columna in df_hoja_historia.columns:
+                    df_hoja_historia = df_hoja_historia.drop(columns=[nombre_nueva_columna])
+                
+                # Preparamos la novedad (datos Strava)
+                df_novedad_semanal = df_semana_actual[['MatchKey', columna_datos_strava]].copy()
+                
+                # --- PURIFICACIÓN DE DATOS (Regla 7: 1.0 = 24h) ---
+                if columna_datos_strava != 'CV':
+                    # Aseguramos que el valor sea numérico antes de dividir por 1440
+                    df_novedad_semanal[nombre_nueva_columna] = df_novedad_semanal[columna_datos_strava].apply(
+                        lambda x: (to_mins(x) / 1440.0) if pd.notna(x) else 0.0
+                    )
+                else:
+                    df_novedad_semanal[nombre_nueva_columna] = df_novedad_semanal[columna_datos_strava]
+                
+                # Limpieza de duplicados en la novedad antes de la unión
+                df_novedad_semanal = df_novedad_semanal.drop_duplicates(subset=['MatchKey'], keep='first')
+                
+                # --- MERGE DE INTEGRIDAD ---
+                df_actualizado_hoja = pd.merge(
+                    df_hoja_historia, 
+                    df_novedad_semanal[['MatchKey', nombre_nueva_columna]], 
+                    on='MatchKey', 
+                    how='outer'
+                )
+                
+                # --- LIMPIEZA DE TYPES (EVITA ERROR DE SUMA Y TYPEERROR) ---
+                # Convertimos todas las columnas "Sem XX" a numérico para que se puedan sumar
+                columnas_semanales = [c for c in df_actualizado_hoja.columns if str(c).startswith('Sem')]
+                for col_s in columnas_semanales:
+                    df_actualizado_hoja[col_s] = pd.to_numeric(df_actualizado_hoja[col_s], errors='coerce').fillna(0.0)
+                
+                # --- GESTIÓN DE ATLETAS NUEVOS ---
+                # Si el atleta es nuevo, su celda de identidad estará vacía (NaN)
+                mask_atletas_nuevos = df_actualizado_hoja[col_id_identidad].isna()
+                map_identidades = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
+                df_actualizado_hoja.loc[mask_atletas_nuevos, col_id_identidad] = df_actualizado_hoja.loc[mask_atletas_nuevos, 'MatchKey'].map(map_identidades)
+                
+                # Rellenar con 0 a quienes no entrenaron esta semana
+                df_actualizado_hoja[nombre_nueva_columna] = df_actualizado_hoja[nombre_nueva_columna].fillna(0.0)
+                
+                # --- RECALCULO DE TOTALES ---
+                if columna_datos_strava != 'CV':
+                    if 'Tiempo Acumulado' in df_actualizado_hoja.columns:
+                        df_actualizado_hoja['Tiempo Acumulado'] = df_actualizado_hoja[columnas_semanales].sum(axis=1)
+                    
+                    if 'Promedio' in df_actualizado_hoja.columns:
+                        df_actualizado_hoja['Promedio'] = df_actualizado_hoja[columnas_semanales].mean(axis=1)
+                
+                # Guardamos la hoja limpia
+                dict_dfs_actualizados[nombre_hoja_original] = df_actualizado_hoja.drop(columns=['MatchKey'], errors='ignore')
+            else:
+                # Si no hay datos en la semana para esta hoja, se mantiene original
+                dict_dfs_actualizados[nombre_hoja_original] = dict_dfs_originales[nombre_hoja_original]
         else:
-            # Hojas que no son de disciplinas (Calendario, etc.) se guardan sin modificaciones
+            # Hojas estáticas (Calendario, etc.) se mantienen sin cambios
             dict_dfs_actualizados[nombre_hoja_original] = dict_dfs_originales[nombre_hoja_original]
             
     return dict_dfs_actualizados
 
 def save_maestro_to_excel(dict_dfs):
     """
-    Convierte el diccionario de DataFrames en un stream binario de Excel (.xlsx).
-    Mantiene todas las pestañas actualizadas.
+    Exportación binaria multi-hoja.
     """
-    output_binario = io.BytesIO()
-    with pd.ExcelWriter(output_binario, engine='xlsxwriter') as writer:
-        for nombre_hoja, df_contenido in dict_dfs.items():
-            df_contenido.to_excel(writer, sheet_name=nombre_hoja, index=False)
-    return output_binario.getvalue()
+    output_buffer = io.BytesIO()
+    with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
+        for hoja, contenido in dict_dfs.items():
+            contenido.to_excel(writer, sheet_name=hoja, index=False)
+    return output_buffer.getvalue()
 # =============================================================================
 # FIN DE SECCIÓN 5
 # =============================================================================
@@ -351,103 +346,94 @@ def save_maestro_to_excel(dict_dfs):
 # --- 6. GENERADOR DE ENTREGABLES WORD Y ZIP (VERSIÓN EXTENDIDA) ---
 # *****************************************************************************
 
-def generar_entregables_finales(df_semanal_procesado, dict_maestro_actualizado, tag_semana):
+def generar_entregables_finales(df_semanal_final, dict_maestro_final, tag_semana):
     """
-    Genera el paquete ZIP con el Maestro y los reportes detallados.
-    Resuelve el error de '0 triatletas completos' validando contra minutos reales por disciplina.
+    Genera el paquete ZIP con el Maestro y las fichas individuales.
+    Resuelve el error de '0 triatletas completos' validando contra minutos reales.
     """
     zip_buffer_final = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer_final, "a", zipfile.ZIP_DEFLATED) as zf:
         
-        # --- 6.1: EL EXCEL MAESTRO ACTUALIZADO ---
-        datos_excel = save_maestro_to_excel(dict_maestro_actualizado)
-        zf.writestr(f"01_Estadisticas_Actualizadas_{tag_semana}.xlsx", datos_excel)
+        # --- 6.1: EXCEL MAESTRO ACTUALIZADO ---
+        binario_excel = save_maestro_to_excel(dict_maestro_final)
+        zf.writestr(f"01_Estadisticas_Actualizadas_{tag_semana}.xlsx", binario_excel)
         
-        # --- 6.2: EL REPORTE GRUPAL (INSIGHTS) ---
+        # --- 6.2: REPORTE GRUPAL (WORD) ---
         doc_grupal = Document()
         doc_grupal.add_heading(f"Reporte Semanal Club TYM - {tag_semana}", 0)
         
-        # Lógica de detección de triatletas completos (Regla TYM: Minutos en las 3 áreas > 0)
-        df_completos = df_semanal_procesado[
-            (df_semanal_procesado['N_Mins'] > 0) & 
-            (df_semanal_procesado['B_Mins'] > 0) & 
-            (df_semanal_procesado['R_Mins'] > 0)
+        # Métricas grupales con validación profunda
+        # Se considera completo si tiene minutos mayores a 0 en las 3 disciplinas
+        df_completos = df_semanal_final[
+            (df_semanal_final['N_Mins'] > 0) & 
+            (df_semanal_final['B_Mins'] > 0) & 
+            (df_semanal_final['R_Mins'] > 0)
         ]
         
-        total_activos = len(df_semanal_procesado)
+        total_deportistas = len(df_semanal_final)
         total_completos = len(df_completos)
-        volumen_total_club = df_semanal_procesado['T_Mins'].sum()
+        horas_totales_club = df_semanal_final['T_Mins'].sum()
         
-        # Párrafo de resumen estadístico
-        resumen = doc_grupal.add_paragraph()
-        resumen.add_run(f"Total deportistas registrados esta semana: ").bold = True
-        resumen.add_run(f"{total_activos}\n")
-        resumen.add_run(f"Triatletas con entrenamiento completo (N/B/R): ").bold = True
-        resumen.add_run(f"{total_completos}\n")
-        resumen.add_run(f"Volumen total acumulado por el club: ").bold = True
-        resumen.add_run(f"{to_hhmmss_display(volumen_total_club)}")
+        # Párrafo de resumen
+        p = doc_grupal.add_paragraph()
+        p.add_run(f"Total deportistas registrados: ").bold = True
+        p.add_run(f"{total_deportistas}\n")
+        p.add_run(f"Triatletas completos esta semana (N/B/R): ").bold = True
+        p.add_run(f"{total_completos}\n")
+        p.add_run(f"Tiempo total acumulado por el club: ").bold = True
+        p.add_run(f"{to_hhmmss_display(horas_totales_club)}")
 
-        # TABLA DE PODIO: TOP 15 ADHERENCIA (TPI)
-        doc_grupal.add_heading("🏆 TOP 15 ADHERENCIA GLOBAL (TPI)", level=1)
-        tabla_top = doc_grupal.add_table(rows=1, cols=3)
-        tabla_top.style = 'Light Grid Accent 1'
-        hdr_cells = tabla_top.rows[0].cells
-        hdr_cells[0].text = 'Posición'
-        hdr_cells[1].text = 'Deportista'
-        hdr_cells[2].text = 'TPI Global %'
+        # Tabla de Podio TPI (TOP 15)
+        doc_grupal.add_heading("🏆 TOP 15 ADHERENCIA (TPI GLOBAL)", level=1)
+        tabla = doc_grupal.add_table(rows=1, cols=3)
+        tabla.style = 'Light Grid Accent 1'
+        hdr = tabla.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text = 'Posición', 'Deportista', 'TPI Global %'
         
-        # Ordenamos por TPI_Global de forma descendente
-        df_ranking = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
-        for i, (idx, fila_rank) in enumerate(df_ranking.iterrows(), 1):
-            row_cells = tabla_top.add_row().cells
-            row_cells[0].text = str(i)
-            row_cells[1].text = str(fila_rank['Deportista'])
-            row_cells[2].text = f"{fila_rank['TPI_Global']:.1f}%"
+        # Ordenamos por adherencia
+        df_rank = df_semanal_final.sort_values('TPI_Global', ascending=False).head(15)
+        for i, (idx, fila_r) in enumerate(df_rank.iterrows(), 1):
+            r_c = tabla.add_row().cells
+            r_c[0].text = str(i)
+            r_c[1].text = str(fila_r['Deportista'])
+            r_c[2].text = f"{fila_r['TPI_Global']:.1f}%"
 
-        # Guardar reporte grupal en el buffer
-        buf_grupal = io.BytesIO()
-        doc_grupal.save(buf_grupal)
-        zf.writestr(f"02_Reporte_General_{tag_semana}.docx", buf_grupal.getvalue())
+        # Guardar Documento Grupal
+        buf_g = io.BytesIO()
+        doc_grupal.save(buf_g)
+        zf.writestr(f"02_Reporte_General_{tag_semana}.docx", buf_g.getvalue())
 
-        # --- 6.3: FICHAS INDIVIDUALES (CLIENTES) ---
-        # Se genera un archivo por cada deportista que registró actividad
-        for _, row_atleta in df_semanal_procesado.iterrows():
-            if row_atleta['T_Mins'] > 0:
-                doc_indiv = Document()
-                doc_indiv.add_heading(f"Análisis de Rendimiento: {row_atleta['Deportista']}", 0)
+        # --- 6.3: FICHAS INDIVIDUALES ---
+        # Solo para atletas con actividad
+        for _, row_a in df_semanal_final.iterrows():
+            if row_a['T_Mins'] > 0:
+                doc_i = Document()
+                doc_i.add_heading(f"Reporte Semanal: {row_a['Deportista']}", 0)
                 
-                # Resumen de Adherencia
-                p_tpi = doc_indiv.add_paragraph()
-                p_tpi.add_run(f"Tu índice de adherencia TPI Global esta semana: ").bold = True
-                p_tpi.add_run(f"{row_atleta['TPI_Global']:.1f}%")
+                # KPIs principales
+                doc_i.add_heading(f"Adherencia Semanal: {row_a['TPI_Global']:.1f}%", level=1)
                 
-                # Tabla Desglose de Disciplinas
-                tabla_ind = doc_indiv.add_table(rows=1, cols=3)
-                tabla_ind.style = 'Table Grid'
-                h_ind = tabla_ind.rows[0].cells
-                h_ind[0].text = 'Disciplina'
-                h_ind[1].text = 'Tiempo Real (HH:MM)'
-                h_ind[2].text = 'TPI %'
+                # Tabla Desglose
+                t_i = doc_i.add_table(rows=1, cols=3); t_i.style = 'Table Grid'
+                h_i = t_i.rows[0].cells
+                h_i[0].text, h_i[1].text, h_i[2].text = 'Disciplina', 'Tiempo Real', 'TPI %'
                 
-                # Iteramos por las tres disciplinas
                 for disc, m_col in [('Natación', 'N_Mins'), ('Ciclismo', 'B_Mins'), ('Trote', 'R_Mins')]:
-                    c_ind = tabla_ind.add_row().cells
-                    c_ind[0].text = disc
-                    c_ind[1].text = to_hhmmss_display(row_atleta[m_col])
-                    # Obtenemos el TPI específico de la columna correspondiente
-                    tpi_key = f'TPI_{disc}' if f'TPI_{disc}' in row_atleta else 'TPI_Global'
-                    c_ind[2].text = f"{row_atleta.get(tpi_key, 0):.1f}%"
+                    c_i = t_i.add_row().cells
+                    c_i[0].text = disc
+                    c_i[1].text = to_hhmmss_display(row_a[m_col])
+                    # Verificamos si la columna de TPI existe para esa disciplina
+                    tpi_key = f'TPI_{disc}' if f'TPI_{disc}' in row_a else 'TPI_Global'
+                    c_i[2].text = f"{row_a.get(tpi_key, 0):.1f}%"
 
-                # Inyección del Comentario Narrativo (Sección 3)
-                doc_indiv.add_heading("Evaluación Técnica", level=1)
-                doc_indiv.add_paragraph(generar_comentario(row_atleta, 'General', 1))
+                doc_i.add_heading("Comentario Técnico", level=1)
+                doc_i.add_paragraph(generar_comentario(row_a, 'General', 1))
                 
-                # Guardar ficha individual
-                buf_indiv = io.BytesIO()
-                doc_indiv.save(buf_indiv)
-                nombre_ficha = f"Fichas/Ficha_{clean_string(row_atleta['Deportista'])}.docx"
-                zf.writestr(nombre_ficha, buf_indiv.getvalue())
+                buf_i = io.BytesIO()
+                doc_i.save(buf_i)
+                nombre_archivo = f"Fichas/Ficha_{clean_string(row_a['Deportista'])}.docx"
+                zf.writestr(nombre_archivo, buf_i.getvalue())
 
     zip_buffer_final.seek(0)
     return zip_buffer_final
