@@ -153,7 +153,7 @@ def procesar_strava_excel(archivo_excel):
     Escanea el Excel descargado de Strava buscando las columnas clave.
     Utiliza búsqueda semántica explícita para ser inmune a cambios de formato.
     """
-    # Cargar el archivo Excel crudo en un DataFrame
+    # Cargar el archivo Excel crudo en un DataFrame de Pandas
     df_raw = pd.read_excel(archivo_excel)
     columnas_originales = df_raw.columns
     
@@ -170,7 +170,7 @@ def procesar_strava_excel(archivo_excel):
             columna_nombre = col
             break
             
-    # Fallback de seguridad: Si no encuentra columna de nombre, asume que es la primera
+    # Fallback de seguridad extrema: Si no encuentra columna de nombre, asume que es la primera
     if columna_nombre is None:
         columna_nombre = columnas_originales[0]
         
@@ -196,14 +196,17 @@ def procesar_strava_excel(archivo_excel):
             break
 
     # --- Construcción del DataFrame Limpio y Purificado ---
-    # Aquí creamos la estructura que el resto del sistema consumirá (N_Mins_Real, etc.)
+    # Aquí creamos la estructura interna que el resto del sistema consumirá sin errores
     df_limpio = pd.DataFrame()
+    
+    # Asignamos la identidad
     df_limpio['Deportista'] = df_raw[columna_nombre]
     
-    # Aplicamos el motor aritmético (to_mins de la Sección 1) a cada columna detectada
+    # Aplicamos el motor aritmético (to_mins de la Sección 1) a cada celda de las disciplinas
     if columna_natacion is not None:
         df_limpio['N_Mins_Real'] = df_raw[columna_natacion].apply(to_mins)
     else:
+        # Si Strava no trae la columna, rellenamos con 0 explícitamente
         df_limpio['N_Mins_Real'] = 0
         
     if columna_ciclismo is not None:
@@ -216,7 +219,7 @@ def procesar_strava_excel(archivo_excel):
     else:
         df_limpio['R_Mins_Real'] = 0
         
-    # Calculamos el tiempo total real de la semana como la suma exacta de las disciplinas
+    # Calculamos el tiempo total real de la semana como la suma exacta de las tres disciplinas
     df_limpio['T_Mins_Real'] = df_limpio['N_Mins_Real'] + df_limpio['B_Mins_Real'] + df_limpio['R_Mins_Real']
     
     return df_limpio
@@ -230,14 +233,14 @@ def procesar_plan_individual(archivo_plan):
     Asegura que la identidad se procese con la misma llave (MatchKey) para un cruce perfecto.
     """
     if archivo_plan is None:
-        # Si no se carga un plan individual, devolvemos un DataFrame vacío
-        # La Sección 3 detectará esto y aplicará las Metas Globales del Sidebar
+        # Si el usuario decide no cargar un plan individual, devolvemos un DataFrame vacío.
+        # El sistema detectará esto y aplicará automáticamente las Metas Globales del Sidebar.
         return pd.DataFrame()
         
     # Cargar el Excel de plan de entrenamiento
     df_plan = pd.read_excel(archivo_plan)
     
-    # Verificación de seguridad: Evitar procesar archivos vacíos
+    # Verificación de seguridad: Evitar procesar archivos que vengan en blanco
     if df_plan.empty:
         return pd.DataFrame()
     
@@ -248,7 +251,7 @@ def procesar_plan_individual(archivo_plan):
     df_plan['MatchKey'] = df_plan[columna_nombres_plan].apply(clean_string)
     
     return df_plan
-
+    
 # *****************************************************************************
 # SECCIÓN 3: MOTOR NARRATIVO PRO CHILE (INTEGRIDAD TOTAL - 80+ FRASES)
 # *****************************************************************************
@@ -265,6 +268,7 @@ def obtener_frase_base(categoria, pool_frases):
     """
     global PILAS_COMENTARIOS
     if categoria not in PILAS_COMENTARIOS or not PILAS_COMENTARIOS[categoria]:
+        # Creamos una copia de la lista para no alterar la original y la barajamos
         temp_pool = [str(f) for f in pool_frases]
         random.shuffle(temp_pool)
         PILAS_COMENTARIOS[categoria] = temp_pool
@@ -277,18 +281,18 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
     """
     atleta = str(datos_de_fila.get('Deportista', 'Atleta TYM'))
     
-    # Dependiendo de la categoría, extraemos el tiempo formateado
-    # Asumimos que datos_de_fila trae los minutos reales ya procesados
+    # Dependiendo de la categoría, extraemos el tiempo formateado en HH:MM
+    # Asumimos que datos_de_fila trae los minutos reales procesados en la Sección 2
     if nombre_categoria == 'Natación':
-        tiempo = to_hhmmss_display(datos_de_fila.get('N_Mins_Real', 0))
+        tiempo = to_hhmm_display(datos_de_fila.get('N_Mins_Real', 0))
     elif nombre_categoria == 'Bicicleta':
-        tiempo = to_hhmmss_display(datos_de_fila.get('B_Mins_Real', 0))
+        tiempo = to_hhmm_display(datos_de_fila.get('B_Mins_Real', 0))
     elif nombre_categoria == 'Trote':
-        tiempo = to_hhmmss_display(datos_de_fila.get('R_Mins_Real', 0))
+        tiempo = to_hhmm_display(datos_de_fila.get('R_Mins_Real', 0))
     else:
-        tiempo = to_hhmmss_display(datos_de_fila.get('T_Mins_Real', 0))
+        tiempo = to_hhmm_display(datos_de_fila.get('T_Mins_Real', 0))
     
-    # BANCO DE FRASES EXTENDIDO (SIN OMISIONES)
+    # BANCO DE FRASES EXTENDIDO (VERSIÓN ABSOLUTA SIN OMISIONES)
     pools = {
         'General': [
             "La disciplina de {atleta} es el motor del club; liderar con este volumen es pura entrega.",
@@ -392,16 +396,16 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
         ]
     }
 
-    # Determinamos la llave de la categoría (Fallback a 'General' si hay error)
+    # Determinamos la llave de la categoría (Fallback a 'General' si el nombre no cuadra exacto)
     cat_key = 'General' if nombre_categoria in ['Completos', 'General'] else nombre_categoria
     
-    # Extraemos la plantilla
+    # Extraemos la plantilla aleatoria
     frase_plantilla = str(obtener_frase_base(cat_key, pools.get(cat_key, pools['General'])))
     
     # Inyectamos los datos del deportista
     comentario_final = frase_plantilla.replace("{atleta}", atleta).replace("{tiempo}", tiempo)
     
-    # Bonus de liderazgo: Si es el número 1 general, añadimos un reconocimiento extra
+    # Bonus de liderazgo: Si es el número 1 del ranking general, añadimos un reconocimiento extra
     if rank_posicion == 1 and cat_key == 'General':
         comentario_final = f"🏆 {comentario_final.replace(atleta, f'nuestro líder {atleta}')}"
         
@@ -412,7 +416,8 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
 # *****************************************************************************
 # Esta sección es el corazón analítico del sistema. Cruza los datos reales 
 # obtenidos de Strava con las metas individuales o globales para calcular el TPI
-# (Índice de Rendimiento TYM). Garantiza que no existan valores nulos (0.0%).
+# (Índice de Rendimiento TYM). Garantiza que no existan valores nulos (0.0%)
+# ni errores de división por cero.
 
 def calcular_kpis_tym(df_real, df_plan, metas_globales):
     """
@@ -435,7 +440,7 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         # incluso si no tienen un plan individual cargado en su fila.
         df_merged = pd.merge(df_real, df_plan, on='MatchKey', how='left', suffixes=('', '_plan'))
     else:
-        # Si no se subió el archivo de plan individual, trabajamos con los datos reales
+        # Si no se subió el archivo de plan individual, trabajamos directamente con los datos reales
         df_merged = df_real.copy()
 
     # 3. Función interna para procesar la aritmética fila por fila (Deportista por Deportista)
@@ -459,14 +464,20 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         minutos_reales_natacion = row.get('N_Mins_Real', 0)
         
         # Cálculo de Índices para Natación
-        # VCI (Volume Compliance Index): Porcentaje de horas cumplidas
-        vci_natacion = (minutos_reales_natacion / (horas_meta_natacion * 60)) * 100 if horas_meta_natacion > 0 else 0
-        
+        # VCI (Volume Compliance Index): Porcentaje de horas cumplidas respecto al plan
+        if horas_meta_natacion > 0:
+            vci_natacion = (minutos_reales_natacion / (horas_meta_natacion * 60)) * 100
+        else:
+            vci_natacion = 0
+            
         # SEI (Session Execution Index): Cumplimiento de sesiones
-        # Si entrenó más de 0 minutos y la meta es mayor a 0, le damos el 100% de la sesión
-        sei_natacion = (100 / sesiones_meta_natacion) if (minutos_reales_natacion > 0 and sesiones_meta_natacion > 0) else 0
+        # Si el atleta entrenó más de 0 minutos y la meta es mayor a 0, asimilamos el 100% de la sesión
+        if minutos_reales_natacion > 0 and sesiones_meta_natacion > 0:
+            sei_natacion = (100 / sesiones_meta_natacion)
+        else:
+            sei_natacion = 0
         
-        # TPI Natación (40% Volumen + 60% Sesiones), tope máximo de 115% de cumplimiento
+        # TPI Natación (Regla de negocio: 40% Volumen + 60% Sesiones), tope máximo de 115% de cumplimiento
         tpi_natacion_crudo = (vci_natacion * 0.4) + (sei_natacion * 0.6)
         resultados_kpi['TPI_Natacion'] = min(tpi_natacion_crudo, 115)
         resultados_kpi['Natacion_Plan_Hrs'] = horas_meta_natacion
@@ -488,8 +499,15 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         minutos_reales_ciclismo = row.get('B_Mins_Real', 0)
         
         # Cálculo de Índices para Ciclismo
-        vci_ciclismo = (minutos_reales_ciclismo / (horas_meta_ciclismo * 60)) * 100 if horas_meta_ciclismo > 0 else 0
-        sei_ciclismo = (100 / sesiones_meta_ciclismo) if (minutos_reales_ciclismo > 0 and sesiones_meta_ciclismo > 0) else 0
+        if horas_meta_ciclismo > 0:
+            vci_ciclismo = (minutos_reales_ciclismo / (horas_meta_ciclismo * 60)) * 100
+        else:
+            vci_ciclismo = 0
+            
+        if minutos_reales_ciclismo > 0 and sesiones_meta_ciclismo > 0:
+            sei_ciclismo = (100 / sesiones_meta_ciclismo)
+        else:
+            sei_ciclismo = 0
         
         # TPI Ciclismo
         tpi_ciclismo_crudo = (vci_ciclismo * 0.4) + (sei_ciclismo * 0.6)
@@ -513,8 +531,15 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         minutos_reales_trote = row.get('R_Mins_Real', 0)
         
         # Cálculo de Índices para Trote
-        vci_trote = (minutos_reales_trote / (horas_meta_trote * 60)) * 100 if horas_meta_trote > 0 else 0
-        sei_trote = (100 / sesiones_meta_trote) if (minutos_reales_trote > 0 and sesiones_meta_trote > 0) else 0
+        if horas_meta_trote > 0:
+            vci_trote = (minutos_reales_trote / (horas_meta_trote * 60)) * 100
+        else:
+            vci_trote = 0
+            
+        if minutos_reales_trote > 0 and sesiones_meta_trote > 0:
+            sei_trote = (100 / sesiones_meta_trote)
+        else:
+            sei_trote = 0
         
         # TPI Trote
         tpi_trote_crudo = (vci_trote * 0.4) + (sei_trote * 0.6)
@@ -534,7 +559,10 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         # Validación Estricta de "Triatleta Completo"
         # Debe registrar estrictamente más de 0 minutos en las TRES disciplinas.
         # Esto soluciona de raíz el fallo del Word donde reportaba "0 Triatletas Completos".
-        resultados_kpi['Es_Completo'] = (minutos_reales_natacion > 0) and (minutos_reales_ciclismo > 0) and (minutos_reales_trote > 0)
+        if (minutos_reales_natacion > 0) and (minutos_reales_ciclismo > 0) and (minutos_reales_trote > 0):
+            resultados_kpi['Es_Completo'] = True
+        else:
+            resultados_kpi['Es_Completo'] = False
         
         # Retornamos los cálculos transformados en una Serie de Pandas
         return pd.Series(resultados_kpi)
@@ -547,216 +575,229 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
     
     return df_final_procesado
 
+
 # *****************************************************************************
 # SECCIÓN 5: MOTOR DE PERSISTENCIA Y ACTUALIZACIÓN DEL MAESTRO
 # *****************************************************************************
-# Esta sección actualiza el libro Excel Histórico preservando las semanas 
-# anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y) 
-# y purifica los tipos de datos para evitar errores aritméticos en los totales.
+# Esta sección actualiza el libro Excel Histórico preservando las semanas
+# anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y)
+# y aplica la "vacuna" para purificar los tipos de datos antiguos SIN destruirlos.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
     Actualiza hoja por hoja el archivo Maestro.
-    Garantiza que la información se indexe correctamente a cada atleta.
+    Garantiza que la información se indexe correctamente a cada atleta
+    y que la historia no se borre ni se convierta en ceros.
     """
     dict_dfs_actualizados = {}
-    
+
     # 1. Mapeo Extendido de Disciplinas (Sincronización de Pestañas)
-    # Permite que el sistema encuentre la pestaña incluso si se llama "Ciclismo" o "Bicicleta"
     mapeo_hojas_a_datos = {
         'TIEMPO TOTAL': 'T_Mins_Real',
         'NATACION': 'N_Mins_Real',
         'NATACIÓN': 'N_Mins_Real',
         'BICICLETA': 'B_Mins_Real',
-        'CICLISMO': 'B_Mins_Real', 
+        'CICLISMO': 'B_Mins_Real',
         'TROTE': 'R_Mins_Real',
         'RUNNING': 'R_Mins_Real',
-        'CV': 'TPI_Global' # En la hoja de Coeficiente (CV) guardamos la Adherencia (TPI)
+        'CV': 'TPI_Global'
     }
-    
+
     # Normalizamos los nombres de las pestañas reales del archivo subido
     hojas_reales_normalizadas = {clean_string(nombre): nombre for nombre in dict_dfs_originales.keys()}
-    
+
+    # Diccionario para mapear MatchKey a Nombres reales de la semana actual (Para atletas nuevos)
+    mapeo_nombres_nuevos = df_semana_actual.set_index('MatchKey')['Deportista'].to_dict()
+
     # 2. Bucle de Procesamiento: Hoja por Hoja
     for nombre_hoja_original in dict_dfs_originales.keys():
         nombre_normalizado = clean_string(nombre_hoja_original)
-        
+
         # Verificamos si la pestaña actual es una disciplina a actualizar
         if nombre_normalizado in mapeo_hojas_a_datos:
             columna_datos_a_extraer = mapeo_hojas_a_datos[nombre_normalizado]
             df_hoja_historia = dict_dfs_originales[nombre_hoja_original].copy()
-            
+
             # --- IDENTIFICACIÓN DEL DEPORTISTA ---
             col_identidad_maestro = 'Nombre' if 'Nombre' in df_hoja_historia.columns else \
                                    ('Deportista' if 'Deportista' in df_hoja_historia.columns else df_hoja_historia.columns[0])
-            
-            # Generamos la llave maestra (MatchKey) usando el normalizador de la Sección 1
+
+            # Generamos la llave maestra (MatchKey) para un cruce seguro
             df_hoja_historia['MatchKey'] = df_hoja_historia[col_identidad_maestro].apply(clean_string)
-            
+
             # --- BLINDAJE ANTI-DUPLICADOS (Evita Sem 08_x) ---
-            # Si la columna ya existe en el maestro (ej: el usuario reprocesa la misma semana),
-            # la eliminamos completamente antes del merge para asegurar una sobreescritura limpia.
+            # Si el usuario procesa la misma semana dos veces, borramos la columna antes de escribir
             if etiqueta_semana in df_hoja_historia.columns:
                 df_hoja_historia = df_hoja_historia.drop(columns=[etiqueta_semana])
-            
-            # --- PURIFICACIÓN ARITMÉTICA DE SEMANAS ANTERIORES ---
-            # Para evitar TypeError al sumar, convertimos todas las 'Sem XX' a números puros.
+
+            # --- SALVACIÓN Y PURIFICACIÓN DEL HISTORIAL (La Vacuna anti-ceros) ---
+            # Identificamos todas las columnas históricas que empiezan con 'Sem'
             columnas_semanas_viejas = [c for c in df_hoja_historia.columns if str(c).startswith('Sem')]
+
             for col_vieja in columnas_semanas_viejas:
-                # 'coerce' convierte textos irreconocibles a NaN, y fillna(0) los hace sumables.
-                df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0)
-            
+                if columna_datos_a_extraer != 'TPI_Global':
+                    # Si es tiempo, usamos nuestra función to_mins de la Sección 1 y dividimos por 1440
+                    # Esto garantiza que "02:30" o Timedeltas no se borren, sino que se conviertan seguro.
+                    df_hoja_historia[col_vieja] = df_hoja_historia[col_vieja].apply(to_mins) / 1440.0
+                else:
+                    # Si es la hoja CV (TPI_Global), son porcentajes, forzamos numérico sin to_mins
+                    df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0)
+
             # --- PREPARACIÓN DE LA NOVEDAD (DATOS DE LA SEMANA) ---
             df_novedad = df_semana_actual[['MatchKey', columna_datos_a_extraer]].copy()
-            
-            # Regla de Conversión a Excel (1.0 = 24 horas)
+
             if columna_datos_a_extraer != 'TPI_Global':
-                # Convertimos minutos a fracción de día de Excel
                 df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer].apply(
                     lambda x: (x / 1440.0) if pd.notna(x) else 0.0
                 )
             else:
-                # Para el TPI (Porcentaje), dividimos por 100
                 df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer] / 100.0
-            
+
             # Eliminamos duplicados en la novedad por seguridad extrema
             df_novedad = df_novedad.drop_duplicates(subset=['MatchKey'], keep='first')
-            
+
             # --- UNIÓN DEL HISTÓRICO CON LA NOVEDAD ---
-            # LEFT JOIN asegura que la estructura del Maestro mande.
+            # Usamos OUTER JOIN. Si hay un atleta nuevo en Strava que no estaba en el Maestro,
+            # esto garantiza que se agregue al final de la lista y no se pierda.
             df_actualizado = pd.merge(
-                df_hoja_historia, 
-                df_novedad[['MatchKey', etiqueta_semana]], 
-                on='MatchKey', 
-                how='left'
+                df_hoja_historia,
+                df_novedad[['MatchKey', etiqueta_semana]],
+                on='MatchKey',
+                how='outer'
             )
-            
-            # Rellenamos con 0 a los atletas antiguos que no entrenaron esta semana
+
+            # Rellenamos los vacíos generados por cruces de atletas antiguos/nuevos
             df_actualizado[etiqueta_semana] = df_actualizado[etiqueta_semana].fillna(0.0)
-            
+
+            # --- GESTIÓN DE ATLETAS NUEVOS ---
+            # Rellenar el nombre del deportista si acaba de aparecer en el club esta semana
+            mask_nuevos = df_actualizado[col_identidad_maestro].isna()
+            df_actualizado.loc[mask_nuevos, col_identidad_maestro] = df_actualizado.loc[mask_nuevos, 'MatchKey'].map(mapeo_nombres_nuevos)
+
+            # Rellenar las semanas históricas con 0 para los atletas nuevos
+            for col_vieja in columnas_semanas_viejas:
+                df_actualizado[col_vieja] = df_actualizado[col_vieja].fillna(0.0)
+
             # --- RECALCULO DE MÉTRICAS (TIEMPO ACUMULADO) ---
             columnas_todas_semanas = [c for c in df_actualizado.columns if str(c).startswith('Sem')]
+
             if columna_datos_a_extraer != 'TPI_Global':
                 if 'Tiempo Acumulado' in df_actualizado.columns:
-                    # La suma ya no fallará porque garantizamos que todas las columnas son numéricas
+                    # Esta suma ya no explotará porque todas las celdas fueron forzadas a números puros
                     df_actualizado['Tiempo Acumulado'] = df_actualizado[columnas_todas_semanas].sum(axis=1)
-                
+
                 if 'Promedio' in df_actualizado.columns:
                     df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1)
-            
-            # Guardamos la pestaña actualizada en el diccionario final (borrando la llave técnica)
+
+            # Guardamos la pestaña actualizada eliminando la llave técnica
             dict_dfs_actualizados[nombre_hoja_original] = df_actualizado.drop(columns=['MatchKey'], errors='ignore')
-            
+
         else:
-            # Si la hoja no es de disciplinas (Ej: "Número de Semana", "Calendario"),
-            # la traspasamos intacta sin alterarla.
+            # Si la hoja no es de disciplinas (ej: Calendario), la traspasamos intacta
             dict_dfs_actualizados[nombre_hoja_original] = dict_dfs_originales[nombre_hoja_original]
-            
+
     return dict_dfs_actualizados
 
-def guardar_maestro_excel(dict_dfs):
-    """
-    Convierte el diccionario de DataFrames en un archivo binario Excel (.xlsx).
-    Utiliza xlsxwriter para mayor estabilidad y retención de formatos en archivos con muchas hojas.
-    """
-    buffer_salida = io.BytesIO()
-    with pd.ExcelWriter(buffer_salida, engine='xlsxwriter') as writer:
-        for nombre_pestaña, df_contenido in dict_dfs.items():
-            df_contenido.to_excel(writer, sheet_name=nombre_pestaña, index=False)
-    
-    return buffer_salida.getvalue()
+
 # =============================================================================
 # FIN DE SECCIÓN 5
 # =============================================================================
 
 # *****************************************************************************
-# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (GENERADOR WORD Y EXCEL EN ZIP)
+# SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (DESCARGAS SEPARADAS)
 # *****************************************************************************
-# Esta sección toma los datos calculados y purificados para generar el 
-# paquete final descargable. Garantiza que la lectura de minutos y porcentajes
-# se plasme en los reportes sin errores de formato o valores vacíos.
+# Esta sección toma los datos calculados y purificados para generar los archivos
+# finales. Cumpliendo con los requerimientos operativos, genera tres buffers
+# separados en memoria para permitir descargas independientes en la interfaz.
 
-def generar_entregables_finales(df_semanal_procesado, dict_maestro_actualizado, etiqueta_semana):
+def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado, etiqueta_semana):
     """
-    Construye en memoria (RAM) el archivo ZIP que contendrá:
-    1. El Excel Maestro Histórico actualizado.
-    2. El Reporte General del Club (Word).
-    3. Una carpeta con las fichas individuales de cada deportista activo (Word).
-    """
-    # Creamos el buffer en memoria para el archivo ZIP
-    zip_buffer_final = io.BytesIO()
+    Construye en memoria (RAM) los tres archivos solicitados por separado:
+    1. buffer_excel: El Excel Maestro Histórico actualizado.
+    2. buffer_word_grupal: El Reporte General del Club.
+    3. buffer_zip_fichas: Un archivo ZIP que contiene únicamente las fichas individuales.
     
-    with zipfile.ZipFile(zip_buffer_final, "a", zipfile.ZIP_DEFLATED) as archivo_zip:
-        
-        # ---------------------------------------------------------------------
-        # 6.1: EMPAQUETADO DEL EXCEL MAESTRO ACTUALIZADO
-        # ---------------------------------------------------------------------
-        # Llamamos a la función de la Sección 5 que convierte el diccionario en Excel
-        binario_excel = guardar_maestro_excel(dict_maestro_actualizado)
-        nombre_excel = f"01_Estadisticas_Actualizadas_{etiqueta_semana}.xlsx"
-        archivo_zip.writestr(nombre_excel, binario_excel)
-        
-        # ---------------------------------------------------------------------
-        # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD)
-        # ---------------------------------------------------------------------
-        doc_grupal = Document()
-        doc_grupal.add_heading(f"Reporte Semanal Club TYM - {etiqueta_semana}", 0)
-        
-        # --- Cálculo de Métricas Grupales Auditadas ---
-        total_deportistas_activos = len(df_semanal_procesado)
-        
-        # Filtramos a los triatletas completos (aquellos con la bandera Es_Completo == True)
-        # Esta bandera fue estrictamente calculada en la Sección 4
-        df_triatletas_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
-        total_completos = len(df_triatletas_completos)
-        
-        # Sumamos el tiempo total real procesado por todo el club
-        minutos_totales_club = df_semanal_procesado['T_Mins_Real'].sum()
-        
-        # --- Redacción del Párrafo de Resumen ---
-        parrafo_resumen = doc_grupal.add_paragraph()
-        parrafo_resumen.add_run("Total deportistas registrados esta semana: ").bold = True
-        parrafo_resumen.add_run(f"{total_deportistas_activos}\n")
-        
-        parrafo_resumen.add_run("Triatletas con entrenamiento completo (N/B/R): ").bold = True
-        parrafo_resumen.add_run(f"{total_completos}\n")
-        
-        parrafo_resumen.add_run("Volumen total acumulado por el club: ").bold = True
-        parrafo_resumen.add_run(f"{to_hhmmss_display(minutos_totales_club)}")
+    Devuelve un diccionario con los tres objetos para que la interfaz los procese.
+    """
+    
+    # ---------------------------------------------------------------------
+    # 6.1: GENERACIÓN DEL EXCEL MAESTRO ACTUALIZADO
+    # ---------------------------------------------------------------------
+    buffer_excel = io.BytesIO()
+    # Usamos xlsxwriter para mayor estabilidad y soporte multifichas
+    with pd.ExcelWriter(buffer_excel, engine='xlsxwriter') as writer:
+        for nombre_hoja, df_hoja in dict_maestro_actualizado.items():
+            df_hoja.to_excel(writer, sheet_name=nombre_hoja, index=False)
+            
+    # Reiniciamos el puntero del buffer para que Streamlit pueda leerlo desde el principio
+    buffer_excel.seek(0)
+    
+    # ---------------------------------------------------------------------
+    # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD)
+    # ---------------------------------------------------------------------
+    doc_grupal = Document()
+    doc_grupal.add_heading(f"Reporte Semanal Club TYM - {etiqueta_semana}", 0)
+    
+    # --- Cálculo de Métricas Grupales Auditadas ---
+    total_deportistas_activos = len(df_semanal_procesado)
+    
+    # Filtramos a los triatletas completos (aquellos con la bandera Es_Completo == True)
+    # Esta bandera fue estrictamente calculada en la Sección 4
+    df_triatletas_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
+    total_completos = len(df_triatletas_completos)
+    
+    # Sumamos el tiempo total real procesado por todo el club
+    minutos_totales_club = df_semanal_procesado['T_Mins_Real'].sum()
+    
+    # --- Redacción del Párrafo de Resumen ---
+    parrafo_resumen = doc_grupal.add_paragraph()
+    parrafo_resumen.add_run("Total deportistas registrados esta semana: ").bold = True
+    parrafo_resumen.add_run(f"{total_deportistas_activos}\n")
+    
+    parrafo_resumen.add_run("Triatletas con entrenamiento completo (N/B/R): ").bold = True
+    parrafo_resumen.add_run(f"{total_completos}\n")
+    
+    parrafo_resumen.add_run("Volumen total acumulado por el club: ").bold = True
+    # Usamos el nuevo formato estricto de horas y minutos (HH:MM)
+    parrafo_resumen.add_run(f"{to_hhmm_display(minutos_totales_club)}")
 
-        # --- Construcción de la Tabla de Podio TPI (TOP 15) ---
-        doc_grupal.add_heading("🏆 TOP 15 ADHERENCIA (TPI GLOBAL)", level=1)
-        
-        tabla_podio = doc_grupal.add_table(rows=1, cols=3)
-        tabla_podio.style = 'Light Grid Accent 1'
-        
-        # Encabezados de la tabla
-        celdas_encabezado = tabla_podio.rows[0].cells
-        celdas_encabezado[0].text = 'Posición'
-        celdas_encabezado[1].text = 'Deportista'
-        celdas_encabezado[2].text = 'TPI Global %'
-        
-        # Ordenamos a los deportistas por su TPI Global de mayor a menor y sacamos los primeros 15
-        df_ranking_top15 = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
-        
-        # Iteramos sobre los 15 mejores para rellenar las filas
-        posicion = 1
-        for index, fila_deportista in df_ranking_top15.iterrows():
-            celdas_fila = tabla_podio.add_row().cells
-            celdas_fila[0].text = str(posicion)
-            celdas_fila[1].text = str(fila_deportista['Deportista'])
-            # Formateamos el TPI con un decimal
-            celdas_fila[2].text = f"{fila_deportista['TPI_Global']:.1f}%"
-            posicion += 1
+    # --- Construcción de la Tabla de Podio TPI (TOP 15) ---
+    doc_grupal.add_heading("🏆 TOP 15 ADHERENCIA (TPI GLOBAL)", level=1)
+    
+    tabla_podio = doc_grupal.add_table(rows=1, cols=3)
+    tabla_podio.style = 'Light Grid Accent 1'
+    
+    # Encabezados de la tabla
+    celdas_encabezado = tabla_podio.rows[0].cells
+    celdas_encabezado[0].text = 'Posición'
+    celdas_encabezado[1].text = 'Deportista'
+    celdas_encabezado[2].text = 'TPI Global %'
+    
+    # Ordenamos a los deportistas por su TPI Global de mayor a menor y sacamos los primeros 15
+    df_ranking_top15 = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
+    
+    # Iteramos sobre los 15 mejores para rellenar las filas
+    posicion = 1
+    for index, fila_deportista in df_ranking_top15.iterrows():
+        celdas_fila = tabla_podio.add_row().cells
+        celdas_fila[0].text = str(posicion)
+        celdas_fila[1].text = str(fila_deportista['Deportista'])
+        # Formateamos el TPI con un decimal
+        celdas_fila[2].text = f"{fila_deportista['TPI_Global']:.1f}%"
+        posicion += 1
 
-        # Guardar el Reporte Grupal en el buffer y añadirlo al ZIP
-        buffer_word_grupal = io.BytesIO()
-        doc_grupal.save(buffer_word_grupal)
-        archivo_zip.writestr(f"02_Reporte_General_{etiqueta_semana}.docx", buffer_word_grupal.getvalue())
+    # Guardar el Reporte Grupal en su propio buffer independiente
+    buffer_word_grupal = io.BytesIO()
+    doc_grupal.save(buffer_word_grupal)
+    buffer_word_grupal.seek(0)
 
-        # ---------------------------------------------------------------------
-        # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (WORD)
-        # ---------------------------------------------------------------------
+    # ---------------------------------------------------------------------
+    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (EMPAQUETADAS EN UN ZIP)
+    # ---------------------------------------------------------------------
+    buffer_zip_fichas = io.BytesIO()
+    
+    with zipfile.ZipFile(buffer_zip_fichas, "a", zipfile.ZIP_DEFLATED) as archivo_zip:
+        
         # Iteramos sobre absolutamente todos los deportistas procesados
         for index, row_atleta in df_semanal_procesado.iterrows():
             
@@ -791,8 +832,8 @@ def generar_entregables_finales(df_semanal_procesado, dict_maestro_actualizado, 
                 for nombre_disc, col_real, col_meta, col_tpi in matriz_disciplinas:
                     celdas_datos = tabla_desglose.add_row().cells
                     celdas_datos[0].text = nombre_disc
-                    # Formateo visual del tiempo real
-                    celdas_datos[1].text = to_hhmmss_display(row_atleta[col_real])
+                    # Formateo visual del tiempo real a HH:MM (Sin segundos)
+                    celdas_datos[1].text = to_hhmm_display(row_atleta[col_real])
                     # Formateo visual de la meta en horas
                     celdas_datos[2].text = f"{row_atleta[col_meta]:.1f}h"
                     # Formateo visual del TPI individual
@@ -805,130 +846,164 @@ def generar_entregables_finales(df_semanal_procesado, dict_maestro_actualizado, 
                 posicion_ranking = df_ranking_top15.index[df_ranking_top15['Deportista'] == row_atleta['Deportista']].tolist()
                 rango_actual = posicion_ranking[0] + 1 if posicion_ranking else 99
                 
-                # Generamos e inyectamos la frase
+                # Generamos e inyectamos la frase experta
                 comentario_experto = generar_comentario(row_atleta, 'General', rango_actual)
                 doc_individual.add_paragraph(comentario_experto)
                 
-                # Guardamos la ficha en el buffer y la empaquetamos en la subcarpeta "Fichas" del ZIP
+                # Guardamos la ficha en un buffer temporal
                 buffer_word_individual = io.BytesIO()
                 doc_individual.save(buffer_word_individual)
                 
                 # Usamos clean_string para asegurar que el nombre del archivo sea seguro para Windows/Mac
-                nombre_archivo_seguro = f"Fichas/Ficha_{clean_string(row_atleta['Deportista'])}.docx"
+                nombre_archivo_seguro = f"Ficha_{clean_string(row_atleta['Deportista'])}.docx"
+                
+                # Insertamos el Word directamente en la raíz del archivo ZIP
                 archivo_zip.writestr(nombre_archivo_seguro, buffer_word_individual.getvalue())
 
-    # Reiniciamos el puntero del buffer ZIP al inicio para que Streamlit pueda descargarlo
-    zip_buffer_final.seek(0)
-    return zip_buffer_final
+    # Reiniciamos el puntero del buffer ZIP
+    buffer_zip_fichas.seek(0)
+    
+    # ---------------------------------------------------------------------
+    # 6.4: DEVOLUCIÓN DEL DICCIONARIO DE ENTREGABLES
+    # ---------------------------------------------------------------------
+    # Devolvemos los tres canales por separado para que la interfaz genere 3 botones
+    return {
+        'excel_maestro': buffer_excel,
+        'word_grupal': buffer_word_grupal,
+        'zip_fichas': buffer_zip_fichas
+    }
     
 # *****************************************************************************
-# SECCIÓN 7: INTERFAZ DE USUARIO Y ORQUESTACIÓN (STREAMLIT)
+# SECCIÓN 7: INTERFAZ DE USUARIO, ORQUESTACIÓN Y CONSOLA DE DEBUG
 # *****************************************************************************
-# Esta sección construye el panel de control lateral (Sidebar) y ejecuta 
-# secuencialmente todos los motores anteriores cuando el usuario presiona el botón.
+# Esta sección construye el panel de control, ejecuta la cadena de motores
+# (Secciones 2 a 6) de forma secuencial y despliega los tres botones de 
+# descarga independientes generados por el orquestador.
 
-# 1. Título principal de la aplicación en el panel central
-st.title("🏆 Motor de Adherencia y Estadísticas - Club TYM")
-st.markdown("Procesamiento de datos de Strava, cálculo de TPI y generación de reportes premium.")
+# -----------------------------------------------------------------------------
+# 7.1: CONFIGURACIÓN VISUAL DEL PANEL CENTRAL Y SIDEBAR
+# -----------------------------------------------------------------------------
+st.title("🏆 Plataforma de Rendimiento TYM v3.0")
+st.markdown("Generador de KPIs de adherencia (TPI) y Motor de Integridad de Excel.")
 
-# 2. Construcción del Panel Lateral (Sidebar)
 with st.sidebar:
-    st.header("⚙️ 1. Carga de Archivos")
-    st.markdown("Sube los archivos Excel necesarios para el procesamiento.")
+    st.header("⚙️ 1. Entradas de Sistema")
+    st.markdown("Carga los archivos obligatorios para iniciar el procesamiento.")
     
-    # Cargadores de archivos
-    archivo_maestro = st.file_uploader("A. Excel Maestro (Histórico)", type=["xlsx", "xls"])
-    archivo_strava = st.file_uploader("B. Excel Strava (Semana Actual)", type=["xlsx", "xls"])
-    archivo_plan = st.file_uploader("C. Excel Plan Individual (Opcional)", type=["xlsx", "xls"])
+    archivo_maestro = st.file_uploader("A. Maestro Histórico (Excel)", type=["xlsx", "xls"])
+    archivo_strava = st.file_uploader("B. Strava Semanal (Excel)", type=["xlsx", "xls"])
+    archivo_plan = st.file_uploader("C. Plan Individual (Opcional)", type=["xlsx", "xls"])
     
     st.divider()
     
     st.header("🎯 2. Metas Globales (Fallback)")
-    st.markdown("Se usarán automáticamente si un deportista no tiene un plan individual cargado.")
-    
-    # Diccionario explícito para almacenar las metas globales
-    metas_globales_sidebar = {}
-    
-    st.subheader("Natación")
-    metas_globales_sidebar['N_H'] = st.number_input("Horas Natación (Meta)", min_value=0.0, value=3.0, step=0.5)
-    metas_globales_sidebar['N_S'] = st.number_input("Sesiones Natación (Meta)", min_value=1, value=3, step=1)
-    
-    st.subheader("Ciclismo")
-    metas_globales_sidebar['B_H'] = st.number_input("Horas Ciclismo (Meta)", min_value=0.0, value=5.0, step=0.5)
-    metas_globales_sidebar['B_S'] = st.number_input("Sesiones Ciclismo (Meta)", min_value=1, value=3, step=1)
-    
-    st.subheader("Trote")
-    metas_globales_sidebar['T_H'] = st.number_input("Horas Trote (Meta)", min_value=0.0, value=3.0, step=0.5)
-    metas_globales_sidebar['T_S'] = st.number_input("Sesiones Trote (Meta)", min_value=1, value=3, step=1)
+    st.markdown("Aplicables si un atleta no tiene Plan Individual.")
+    metas_globales_sidebar = {
+        'N_H': st.number_input("Natación - Horas", min_value=0.0, value=3.0, step=0.5),
+        'N_S': st.number_input("Natación - Sesiones", min_value=1, value=3, step=1),
+        'B_H': st.number_input("Ciclismo - Horas", min_value=0.0, value=5.0, step=0.5),
+        'B_S': st.number_input("Ciclismo - Sesiones", min_value=1, value=3, step=1),
+        'T_H': st.number_input("Trote - Horas", min_value=0.0, value=3.0, step=0.5),
+        'T_S': st.number_input("Trote - Sesiones", min_value=1, value=3, step=1)
+    }
     
     st.divider()
     
-    st.header("🏷️ 3. Etiqueta de la Semana")
-    etiqueta_semana_input = st.text_input("Nombre de la columna a generar (Ej: Sem 08)", value="Sem 08")
+    st.header("🏷️ 3. Etiqueta Temporal")
+    etiqueta_semana_input = st.text_input("Etiqueta a generar en el Maestro", "Sem 08")
 
-# 3. Inicialización del estado de sesión (Evita que el botón de descarga desaparezca)
-if 'paquete_zip_generado' not in st.session_state:
-    st.session_state['paquete_zip_generado'] = None
+# -----------------------------------------------------------------------------
+# 7.2: INICIALIZACIÓN DEL ESTADO DE SESIÓN (SESSION STATE)
+# -----------------------------------------------------------------------------
+# Esto es vital para que los tres botones de descarga no desaparezcan 
+# de la pantalla al hacer clic en uno de ellos.
+if 'diccionario_entregables' not in st.session_state:
+    st.session_state['diccionario_entregables'] = None
 
-# 4. Botón de Ejecución Principal y Flujo Lógico
-if st.button("🚀 PROCESAR JORNADA Y GENERAR ENTREGABLES", use_container_width=True):
+# -----------------------------------------------------------------------------
+# 7.3: EJECUCIÓN PRINCIPAL (BOTÓN DE PROCESAMIENTO)
+# -----------------------------------------------------------------------------
+if st.button("🚀 PROCESAR EXCEL Y GENERAR ENTREGABLES", use_container_width=True):
     
-    # Verificación de seguridad estricta: Archivos obligatorios
+    # Verificación de seguridad: No avanzar sin los archivos vitales
     if archivo_maestro is not None and archivo_strava is not None:
         
-        with st.spinner("Ejecutando motores de purificación y cálculo... Por favor espera."):
+        with st.spinner("Purificando datos y calculando Adherencia TYM..."):
             try:
-                # --- PASO 1: Extracción ---
-                # Ejecuta la Sección 2 para convertir el Excel de Strava en un DataFrame puro
+                # --- FASE 1: EXTRACCIÓN (Sección 2) ---
                 df_datos_reales = procesar_strava_excel(archivo_strava)
-                
-                # --- PASO 2: Extracción de Plan ---
-                # Ejecuta la Sección 2 para el plan (devuelve DataFrame vacío si no hay archivo)
                 df_datos_plan = procesar_plan_individual(archivo_plan)
                 
-                # --- PASO 3: Cálculo de KPI (El Corazón del Sistema) ---
-                # Ejecuta la Sección 4 aplicando la Cascada de Metas y calculando el TPI
+                # --- FASE 2: CÁLCULO DE KPI (Sección 4) ---
                 df_calculado_kpi = calcular_kpis_tym(df_datos_reales, df_datos_plan, metas_globales_sidebar)
                 
-                # --- PASO 4: Lectura del Historial ---
-                # Carga todas las pestañas del Maestro en la memoria RAM
+                # --- FASE 3: CONSOLA DE AUDITORÍA (DEBUG VISUAL) ---
+                # Mostrar en pantalla los resultados antes de empaquetarlos para validar que no haya ceros
+                with st.expander("🕵️‍♂️ CONSOLA DE AUDITORÍA (VERIFICAR ANTES DE DESCARGAR)", expanded=True):
+                    st.markdown("**1. Lectura Pura de Strava (Mins Reales Extraídos):**")
+                    # Mostramos los minutos procesados para confirmar que la función to_mins hizo su trabajo
+                    st.dataframe(df_calculado_kpi[['Deportista', 'N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']].head(10))
+                    
+                    st.markdown("**2. Cálculo de KPIs (Adherencia):**")
+                    # Mostramos los porcentajes resultantes y la bandera de Triatleta Completo
+                    st.dataframe(df_calculado_kpi[['Deportista', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'TPI_Global', 'Es_Completo']].head(10))
+
+                # --- FASE 4: PERSISTENCIA DEL MAESTRO (Sección 5) ---
                 diccionario_maestro_original = pd.read_excel(archivo_maestro, sheet_name=None)
-                
-                # --- PASO 5: Actualización y Blindaje ---
-                # Ejecuta la Sección 5: Elimina columnas duplicadas, purifica datos antiguos y pega la novedad
                 diccionario_maestro_actualizado = actualizar_maestro_tym(
                     diccionario_maestro_original, 
                     df_calculado_kpi, 
                     etiqueta_semana_input
                 )
                 
-                # --- PASO 6: Generación de Entregables ---
-                # Ejecuta la Sección 6: Crea el ZIP, redacta el Word Grupal y las Fichas Individuales
-                buffer_zip_final = generar_entregables_finales(
+                # --- FASE 5: GENERACIÓN DE ENTREGABLES SEPARADOS (Sección 6) ---
+                # Guardamos el diccionario con los tres buffers en la memoria de la sesión
+                st.session_state['diccionario_entregables'] = generar_entregables_separados(
                     df_calculado_kpi, 
                     diccionario_maestro_actualizado, 
                     etiqueta_semana_input
                 )
                 
-                # Guardamos el ZIP en la memoria permanente de la sesión
-                st.session_state['paquete_zip_generado'] = buffer_zip_final
+                st.success("✅ ¡Procesamiento completado con éxito! Revisa la consola de auditoría y descarga tus archivos.")
                 
-                st.success("✅ ¡Procesamiento completado! Se han purificado los datos y generado los KPIs exitosamente.")
-                
-            except Exception as e:
-                # Capturador de errores críticos para evitar que la pantalla se quede en blanco
-                st.error(f"❌ Ocurrió un error crítico durante el procesamiento: {str(e)}")
-                st.error("Revisa que los archivos de Excel tengan los nombres de columnas correctos.")
+            except Exception as error_critico:
+                st.error(f"❌ Error de Integridad durante el procesamiento: {str(error_critico)}")
     else:
-        # Mensaje de advertencia si el usuario olvidó cargar los archivos
-        st.warning("⚠️ Debes cargar obligatoriamente el 'Excel Maestro' y el 'Excel Strava' en el panel izquierdo para continuar.")
+        st.warning("⚠️ Debes cargar el Maestro Histórico y el Excel de Strava en el panel lateral para iniciar.")
 
-# 5. Botón de Descarga (Renderizado persistente)
-if st.session_state['paquete_zip_generado'] is not None:
-    st.download_button(
-        label="📥 DESCARGAR PAQUETE FINAL (ZIP)",
-        data=st.session_state['paquete_zip_generado'],
-        file_name=f"Entregables_TYM_{etiqueta_semana_input}.zip",
-        mime="application/zip",
-        use_container_width=True
-    )
+# -----------------------------------------------------------------------------
+# 7.4: DESPLIEGUE DE LOS TRES BOTONES DE DESCARGA INDEPENDIENTES
+# -----------------------------------------------------------------------------
+if st.session_state['diccionario_entregables'] is not None:
+    st.markdown("### 📥 Descarga de Archivos Procesados")
+    st.markdown("Selecciona el entregable que deseas descargar:")
+    
+    # Creamos tres columnas para organizar los botones visualmente
+    columna_excel, columna_word, columna_zip = st.columns(3)
+    
+    with columna_excel:
+        st.download_button(
+            label="📊 1. Descargar Maestro Actualizado (.xlsx)",
+            data=st.session_state['diccionario_entregables']['excel_maestro'],
+            file_name=f"01_Estadisticas_TYM_{etiqueta_semana_input}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+        
+    with columna_word:
+        st.download_button(
+            label="📄 2. Descargar Reporte Grupal (.docx)",
+            data=st.session_state['diccionario_entregables']['word_grupal'],
+            file_name=f"02_Reporte_General_{etiqueta_semana_input}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True
+        )
+        
+    with columna_zip:
+        st.download_button(
+            label="🗂️ 3. Descargar Fichas Individuales (.zip)",
+            data=st.session_state['diccionario_entregables']['zip_fichas'],
+            file_name=f"03_Fichas_Individuales_{etiqueta_semana_input}.zip",
+            mime="application/zip",
+            use_container_width=True
+        )
