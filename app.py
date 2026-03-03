@@ -818,7 +818,8 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (GRÁFICOS, COLORES Y REPORTES)
 # *****************************************************************************
 # Esta versión mantiene la estructura vertical extendida sin agrupaciones
-# de líneas, garantizando la auditoría completa del código.
+# de líneas, garantizando la auditoría completa del código. Incluye centrado
+# de tablas, anchos fijos y filtro estricto de elegibilidad para TPI.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -827,13 +828,15 @@ import zipfile
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
 
-def ajustar_anchos_tabla(tabla, anchos):
+def ajustar_anchos_y_centrar_tabla(tabla, anchos):
     """
-    Desactiva el autoajuste de Word y fuerza un ancho exacto para cada columna.
-    Garantiza que los nombres de los deportistas queden en una sola línea.
+    Desactiva el autoajuste de Word, fuerza un ancho exacto para cada columna
+    y centra la tabla en la página para que no se desborde de los márgenes.
     """
     tabla.autofit = False
+    tabla.alignment = WD_TABLE_ALIGNMENT.CENTER
     for row in tabla.rows:
         for idx, width in enumerate(anchos):
             row.cells[idx].width = width
@@ -1012,7 +1015,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     
     tabla_completos = doc_grupal.add_table(rows=1, cols=6)
     tabla_completos.style = 'Light Grid Accent 1'
-    ajustar_anchos_tabla(tabla_completos, [Inches(0.4), Inches(2.2), Inches(1.0), Inches(1.0), Inches(1.0), Inches(1.0)])
+    ajustar_anchos_y_centrar_tabla(tabla_completos, [Inches(0.4), Inches(2.3), Inches(0.9), Inches(0.9), Inches(0.9), Inches(0.9)])
     
     cc = tabla_completos.rows[0].cells
     cc[0].text = '#'
@@ -1047,16 +1050,32 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     doc_grupal.add_heading("📈 4. TOP 15 ADHERENCIA AL PLAN (TPI GLOBAL)", level=1)
     doc_grupal.add_paragraph("") 
     
+    # Filtro estricto para Adherencia
+    def es_elegible_para_podio_tpi(row):
+        # Si la meta de plan es > 0 pero el real es 0, queda fuera.
+        if row.get('Natacion_Plan_Hrs', 0) > 0 and row.get('N_Mins_Real', 0) == 0:
+            return False
+        if row.get('Ciclismo_Plan_Hrs', 0) > 0 and row.get('B_Mins_Real', 0) == 0:
+            return False
+        if row.get('Trote_Plan_Hrs', 0) > 0 and row.get('R_Mins_Real', 0) == 0:
+            return False
+        # Debe haber registrado al menos alguna actividad en total
+        if row.get('T_Mins_Real', 0) == 0:
+            return False
+        return True
+        
+    df_elegibles_tpi = df_semanal_procesado[df_semanal_procesado.apply(es_elegible_para_podio_tpi, axis=1)]
+    df_ranking_tpi = df_elegibles_tpi.sort_values(by='TPI_Global', ascending=False).head(15)
+    
     tabla_tpi = doc_grupal.add_table(rows=1, cols=3)
     tabla_tpi.style = 'Light Grid Accent 1'
-    ajustar_anchos_tabla(tabla_tpi, [Inches(0.6), Inches(4.0), Inches(1.5)])
+    ajustar_anchos_y_centrar_tabla(tabla_tpi, [Inches(0.5), Inches(4.0), Inches(1.5)])
     
     c_tpi = tabla_tpi.rows[0].cells
     c_tpi[0].text = 'Pos.'
     c_tpi[1].text = 'Deportista'
     c_tpi[2].text = 'TPI Global %'
     
-    df_ranking_tpi = df_semanal_procesado.sort_values(by='TPI_Global', ascending=False).head(15)
     for pos, (_, fila) in enumerate(df_ranking_tpi.iterrows(), 1):
         rc = tabla_tpi.add_row().cells
         rc[0].text = str(pos)
@@ -1087,7 +1106,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         
         tabla_disc = doc_grupal.add_table(rows=1, cols=3)
         tabla_disc.style = 'Light Grid Accent 1'
-        ajustar_anchos_tabla(tabla_disc, [Inches(0.6), Inches(4.0), Inches(1.5)])
+        ajustar_anchos_y_centrar_tabla(tabla_disc, [Inches(0.5), Inches(4.0), Inches(1.5)])
         
         cd = tabla_disc.rows[0].cells
         cd[0].text = 'Pos.'
@@ -1150,7 +1169,6 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
             if row_atleta['T_Mins_Real'] > 0:
                 doc_i = Document()
                 
-                # APLICAR CALIBRI TAMBIÉN A LA FICHA INDIVIDUAL
                 style_ind = doc_i.styles['Normal']
                 font_ind = style_ind.font
                 font_ind.name = 'Calibri'
@@ -1175,7 +1193,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 
                 tabla_desglose = doc_i.add_table(rows=1, cols=4)
                 tabla_desglose.style = 'Table Grid'
-                ajustar_anchos_tabla(tabla_desglose, [Inches(1.5), Inches(1.2), Inches(1.2), Inches(1.2)])
+                ajustar_anchos_y_centrar_tabla(tabla_desglose, [Inches(1.5), Inches(1.2), Inches(1.2), Inches(1.2)])
                 
                 c_cab = tabla_desglose.rows[0].cells
                 c_cab[0].text = 'Disciplina'
@@ -1232,6 +1250,8 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
 
                 # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
                 doc_i.add_heading("Evaluación Técnica", level=2)
+                
+                # El ranking para la narrativa siempre usará la posición del TPI General
                 pos = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
                 
                 if pos:
