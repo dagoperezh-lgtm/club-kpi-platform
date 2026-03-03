@@ -582,8 +582,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
 # Esta sección actualiza el libro Excel Histórico preservando las semanas
 # anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y),
 # aplica la conversión a formato HH:MM estricto, reordena las columnas de 
-# semanas para evitar desastres visuales, inyecta la hoja de KPIs y crea
-# la hoja individual cruda de la semana actual.
+# semanas, inyecta la hoja de KPIs, redondea el CV a 2 decimales y ordena
+# las pestañas finales.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
@@ -628,39 +628,33 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
             df_hoja_historia['MatchKey'] = df_hoja_historia[col_identidad_maestro].apply(clean_string)
 
             # --- BLINDAJE ANTI-DUPLICADOS Y LIMPIEZA DE BASURA ---
-            # Si el usuario procesa la misma semana dos veces, o si quedaron restos de merges
-            # anteriores (como Sem 08_x, Sem 08_y), los eliminamos de raíz.
             columnas_basura = [c for c in df_hoja_historia.columns if etiqueta_semana in str(c) or str(c).endswith('_x') or str(c).endswith('_y')]
             if columnas_basura:
                 df_hoja_historia = df_hoja_historia.drop(columns=columnas_basura)
 
-            # --- SALVACIÓN Y PURIFICACIÓN DEL HISTORIAL (Fase de Cálculo en Minutos) ---
-            # Identificamos todas las columnas históricas que empiezan con 'Sem'
+            # --- SALVACIÓN Y PURIFICACIÓN DEL HISTORIAL ---
             columnas_semanas_viejas = [c for c in df_hoja_historia.columns if str(c).startswith('Sem')]
 
             for col_vieja in columnas_semanas_viejas:
                 if columna_datos_a_extraer != 'TPI_Global':
-                    # TRUCO MAESTRO: Transformamos todo el historial a MINUTOS NUMÉRICOS.
-                    # No lo dividimos por 1440 para evitar decimales. Los minutos enteros se pueden sumar.
                     df_hoja_historia[col_vieja] = df_hoja_historia[col_vieja].apply(to_mins)
                 else:
-                    # Si es la hoja CV (TPI_Global), son porcentajes, forzamos numérico
-                    df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0)
+                    # En la hoja CV forzamos a numérico y aplicamos el límite de 2 decimales
+                    df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0).round(2)
 
             # --- PREPARACIÓN DE LA NOVEDAD (DATOS DE LA SEMANA) ---
             df_novedad = df_semana_actual[['MatchKey', columna_datos_a_extraer]].copy()
 
             if columna_datos_a_extraer != 'TPI_Global':
-                # La novedad también se inyecta en minutos enteros (sin decimales)
                 df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer]
             else:
-                df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer] / 100.0
+                # La novedad de CV también se redondea a 2 decimales
+                df_novedad[etiqueta_semana] = (df_novedad[columna_datos_a_extraer] / 100.0).round(2)
 
-            # Eliminamos duplicados en la novedad por seguridad extrema
+            # Eliminamos duplicados
             df_novedad = df_novedad.drop_duplicates(subset=['MatchKey'], keep='first')
 
             # --- UNIÓN DEL HISTÓRICO CON LA NOVEDAD ---
-            # Usamos OUTER JOIN para asegurar que los atletas nuevos se agreguen al final de la lista.
             df_actualizado = pd.merge(
                 df_hoja_historia,
                 df_novedad[['MatchKey', etiqueta_semana]],
@@ -668,67 +662,57 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
                 how='outer'
             )
 
-            # Rellenamos los vacíos generados por cruces de atletas antiguos/nuevos con 0 minutos
             df_actualizado[etiqueta_semana] = df_actualizado[etiqueta_semana].fillna(0.0)
 
             # --- GESTIÓN DE ATLETAS NUEVOS ---
-            # Rellenar el nombre del deportista si acaba de aparecer en el club esta semana
             mask_nuevos = df_actualizado[col_identidad_maestro].isna()
             df_actualizado.loc[mask_nuevos, col_identidad_maestro] = df_actualizado.loc[mask_nuevos, 'MatchKey'].map(mapeo_nombres_nuevos)
 
-            # Rellenar las semanas históricas con 0 para los atletas nuevos
             for col_vieja in columnas_semanas_viejas:
                 df_actualizado[col_vieja] = df_actualizado[col_vieja].fillna(0.0)
 
-            # --- ORDENAMIENTO DE COLUMNAS DE SEMANAS (Arregla el desastre visual) ---
-            # Separamos las columnas que no son semanas (Nombre, Promedio, Acumulado, etc.)
+            # --- ORDENAMIENTO DE COLUMNAS DE SEMANAS ---
             columnas_fijas = [c for c in df_actualizado.columns if not str(c).startswith('Sem')]
-            # Ordenamos alfabéticamente las semanas para que Sem 08 quede antes de Sem 09 y no al final
             columnas_temporales = sorted([c for c in df_actualizado.columns if str(c).startswith('Sem')])
-            # Reensamblamos el DataFrame en el orden correcto
             df_actualizado = df_actualizado[columnas_fijas + columnas_temporales]
 
             # --- RECALCULO DE MÉTRICAS (TIEMPO ACUMULADO) ---
-            # Ahora que las semanas están ordenadas, capturamos la lista final
             columnas_todas_semanas = [c for c in df_actualizado.columns if str(c).startswith('Sem')]
 
             if columna_datos_a_extraer != 'TPI_Global':
                 if 'Tiempo Acumulado' in df_actualizado.columns:
-                    # Sumamos minutos enteros matemáticamente (Cero errores de Excel)
                     df_actualizado['Tiempo Acumulado'] = df_actualizado[columnas_todas_semanas].sum(axis=1)
 
                 if 'Promedio' in df_actualizado.columns:
                     df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1)
+            else:
+                # Para el CV también calculamos el promedio histórico redondeado a 2 decimales
+                if 'Promedio' in df_actualizado.columns:
+                    df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1).round(2)
 
             # --- CONVERSIÓN VISUAL FINAL (DE MINUTOS A FORMATO HH:MM) ---
-            # Una vez terminada la matemática, transformamos todo a texto "HH:MM" para que Excel lo muestre perfecto
             if columna_datos_a_extraer != 'TPI_Global':
                 columnas_a_formatear = columnas_todas_semanas.copy()
                 if 'Tiempo Acumulado' in df_actualizado.columns: columnas_a_formatear.append('Tiempo Acumulado')
                 if 'Promedio' in df_actualizado.columns: columnas_a_formatear.append('Promedio')
                 
                 for col_fmt in columnas_a_formatear:
-                    # Usamos la función de la Sección 1 que formatea estrictamente a "HH:MM"
                     df_actualizado[col_fmt] = df_actualizado[col_fmt].apply(to_hhmm_display)
 
-            # Guardamos la pestaña actualizada eliminando la llave técnica
+            # Guardamos la pestaña actualizada
             dict_dfs_actualizados[nombre_hoja_original] = df_actualizado.drop(columns=['MatchKey'], errors='ignore')
 
         else:
-            # Si la hoja no es de disciplinas (ej: Calendario, Número de Semana), la traspasamos intacta
             dict_dfs_actualizados[nombre_hoja_original] = dict_dfs_originales[nombre_hoja_original]
 
     # --- INYECCIÓN DEL KPI DE ADHERENCIA EN EL EXCEL ---
-    # Creamos una hoja nueva dedicada exclusivamente al TPI, como solicitó el usuario.
     df_kpi_excel = df_semana_actual[['Deportista', 'TPI_Global', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote', 'Es_Completo']].copy()
     
-    # Formateamos los porcentajes para que sean visualmente perfectos
     for col_tpi in ['TPI_Global', 'TPI_Natacion', 'TPI_Ciclismo', 'TPI_Trote']:
         df_kpi_excel[col_tpi] = df_kpi_excel[col_tpi].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "0.0%")
         
     df_kpi_excel['Es_Completo'] = df_kpi_excel['Es_Completo'].apply(lambda x: "Sí" if x else "No")
     
-    # Renombramos para darle presentación corporativa
     df_kpi_excel = df_kpi_excel.rename(columns={
         'Deportista': 'Nombre del Deportista',
         'TPI_Global': 'Adherencia Global',
@@ -737,19 +721,12 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         'TPI_Trote': 'Adherencia Trote',
         'Es_Completo': f'Completó Plan ({etiqueta_semana})'
     })
-    
-    # Insertamos esta nueva hoja en el diccionario que se exportará a Excel
-    dict_dfs_actualizados['KPI_Adherencia_TPI'] = df_kpi_excel
 
-    # --- NUEVA EXPANSIÓN: CREACIÓN DE LA HOJA CRUDA DE LA SEMANA (Ej: Sem 08) ---
-    # El usuario solicitó transcribir los datos reales de la semana actual en una pestaña propia.
+    # --- NUEVA EXPANSIÓN: CREACIÓN DE LA HOJA CRUDA DE LA SEMANA ---
     df_hoja_semana = df_semana_actual[['Deportista', 'N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']].copy()
-    
-    # Formateamos visualmente a HH:MM antes de guardar
     for col_tiempo in ['N_Mins_Real', 'B_Mins_Real', 'R_Mins_Real', 'T_Mins_Real']:
         df_hoja_semana[col_tiempo] = df_hoja_semana[col_tiempo].apply(to_hhmm_display)
         
-    # Renombramos las columnas para una presentación corporativa impecable
     df_hoja_semana = df_hoja_semana.rename(columns={
         'Deportista': 'Nombre del Deportista',
         'N_Mins_Real': 'Natación',
@@ -757,11 +734,30 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         'R_Mins_Real': 'Trote',
         'T_Mins_Real': 'Tiempo Total'
     })
-    
-    # Guardamos la hoja con el nombre exacto de la etiqueta (Ej: "Sem 08")
-    dict_dfs_actualizados[etiqueta_semana] = df_hoja_semana
 
-    return dict_dfs_actualizados
+    # --- ORDENAMIENTO ESTRICTO DE PESTAÑAS FINALES ---
+    # Aseguramos que el orden sea: [Todas las hojas originales] -> CV -> KPI -> Sem 08
+    dict_final_ordenado = {}
+    
+    # 1. Agregamos todas las hojas excepto CV (para ponerla al final)
+    clave_cv = None
+    for k in dict_dfs_actualizados.keys():
+        if clean_string(k) == 'CV':
+            clave_cv = k
+        else:
+            dict_final_ordenado[k] = dict_dfs_actualizados[k]
+            
+    # 2. Agregamos la hoja CV al final de las históricas
+    if clave_cv:
+        dict_final_ordenado[clave_cv] = dict_dfs_actualizados[clave_cv]
+        
+    # 3. Agregamos la hoja de KPIs
+    dict_final_ordenado['KPI_Adherencia_TPI'] = df_kpi_excel
+    
+    # 4. Agregamos la hoja cruda de la semana actual
+    dict_final_ordenado[etiqueta_semana] = df_hoja_semana
+
+    return dict_final_ordenado
 
 
 # =============================================================================
