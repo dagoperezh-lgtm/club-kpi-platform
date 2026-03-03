@@ -817,9 +817,9 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # *****************************************************************************
 # SECCIÓN 6: ORQUESTADOR DE ENTREGABLES (GRÁFICOS, COLORES Y REPORTES)
 # *****************************************************************************
-# Esta versión mantiene la estructura vertical extendida sin agrupaciones
-# de líneas, garantizando la auditoría completa del código. Incluye centrado
-# de tablas, anchos fijos y filtro estricto de elegibilidad para TPI.
+# Esta versión mantiene la estructura vertical extendida. Incluye el candado
+# estricto de columnas para forzar a Word a respetar los márgenes, el centrado
+# absoluto de tablas y el filtro de elegibilidad para TPI.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -832,14 +832,22 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 
 def ajustar_anchos_y_centrar_tabla(tabla, anchos):
     """
-    Desactiva el autoajuste de Word, fuerza un ancho exacto para cada columna
-    y centra la tabla en la página para que no se desborde de los márgenes.
+    Candado de formato: Desactiva el autoajuste, centra la tabla y fuerza
+    el ancho desde la raíz de la columna para evitar desbordes en los márgenes.
     """
     tabla.autofit = False
     tabla.alignment = WD_TABLE_ALIGNMENT.CENTER
+    
+    # 1. Fijar el ancho de la columna desde la estructura principal
+    for i, col in enumerate(tabla.columns):
+        if i < len(anchos):
+            col.width = anchos[i]
+            
+    # 2. Reforzar el ancho celda por celda para someter a Word
     for row in tabla.rows:
         for idx, width in enumerate(anchos):
-            row.cells[idx].width = width
+            if idx < len(row.cells):
+                row.cells[idx].width = width
 
 def generar_velocimetro_tpi(porcentaje):
     """
@@ -1015,7 +1023,9 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     
     tabla_completos = doc_grupal.add_table(rows=1, cols=6)
     tabla_completos.style = 'Light Grid Accent 1'
-    ajustar_anchos_y_centrar_tabla(tabla_completos, [Inches(0.4), Inches(2.3), Inches(0.9), Inches(0.9), Inches(0.9), Inches(0.9)])
+    
+    # Ancho total = 5.8 pulgadas (Garantiza no salirse de la hoja)
+    ajustar_anchos_y_centrar_tabla(tabla_completos, [Inches(0.4), Inches(2.2), Inches(0.8), Inches(0.8), Inches(0.8), Inches(0.8)])
     
     cc = tabla_completos.rows[0].cells
     cc[0].text = '#'
@@ -1069,7 +1079,9 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     
     tabla_tpi = doc_grupal.add_table(rows=1, cols=3)
     tabla_tpi.style = 'Light Grid Accent 1'
-    ajustar_anchos_y_centrar_tabla(tabla_tpi, [Inches(0.5), Inches(4.0), Inches(1.5)])
+    
+    # Ancho total = 5.5 pulgadas (Centrado y dentro de los márgenes)
+    ajustar_anchos_y_centrar_tabla(tabla_tpi, [Inches(0.5), Inches(3.5), Inches(1.5)])
     
     c_tpi = tabla_tpi.rows[0].cells
     c_tpi[0].text = 'Pos.'
@@ -1106,7 +1118,9 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         
         tabla_disc = doc_grupal.add_table(rows=1, cols=3)
         tabla_disc.style = 'Light Grid Accent 1'
-        ajustar_anchos_y_centrar_tabla(tabla_disc, [Inches(0.5), Inches(4.0), Inches(1.5)])
+        
+        # Ancho total = 5.5 pulgadas (Centrado y dentro de los márgenes)
+        ajustar_anchos_y_centrar_tabla(tabla_disc, [Inches(0.5), Inches(3.5), Inches(1.5)])
         
         cd = tabla_disc.rows[0].cells
         cd[0].text = 'Pos.'
