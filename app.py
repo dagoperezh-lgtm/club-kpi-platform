@@ -608,6 +608,7 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
     df_final_procesado = pd.concat([df_merged, df_resultados_kpi], axis=1)
     
     return df_final_procesado
+    
 
 
 # *****************************************************************************
