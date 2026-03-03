@@ -582,8 +582,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
 # Esta sección actualiza el libro Excel Histórico preservando las semanas
 # anteriores. Implementa un blindaje contra columnas duplicadas (sufijos _x, _y),
 # aplica la conversión a formato HH:MM estricto, reordena las columnas de 
-# semanas, inyecta la hoja de KPIs, redondea el CV a 2 decimales y ordena
-# las pestañas finales.
+# semanas, inyecta la hoja de KPIs, redondea el CV a 2 decimales y aplica
+# un ordenamiento estricto y jerárquico a las pestañas del archivo final.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
@@ -735,27 +735,55 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         'T_Mins_Real': 'Tiempo Total'
     })
 
-    # --- ORDENAMIENTO ESTRICTO DE PESTAÑAS FINALES ---
-    # Aseguramos que el orden sea: [Todas las hojas originales] -> CV -> KPI -> Sem 08
+    # --- ORDENAMIENTO ESTRICTO DE PESTAÑAS FINALES (JERARQUÍA Y DESCENDENTE) ---
     dict_final_ordenado = {}
     
-    # 1. Agregamos todas las hojas excepto CV (para ponerla al final)
-    clave_cv = None
-    for k in dict_dfs_actualizados.keys():
-        if clean_string(k) == 'CV':
-            clave_cv = k
-        else:
-            dict_final_ordenado[k] = dict_dfs_actualizados[k]
-            
-    # 2. Agregamos la hoja CV al final de las históricas
-    if clave_cv:
-        dict_final_ordenado[clave_cv] = dict_dfs_actualizados[clave_cv]
-        
-    # 3. Agregamos la hoja de KPIs
-    dict_final_ordenado['KPI_Adherencia_TPI'] = df_kpi_excel
+    # Insertamos temporalmente las nuevas hojas para el escaneo
+    dict_dfs_actualizados['KPI_Adherencia_TPI'] = df_kpi_excel
+    dict_dfs_actualizados[etiqueta_semana] = df_hoja_semana
     
-    # 4. Agregamos la hoja cruda de la semana actual
-    dict_final_ordenado[etiqueta_semana] = df_hoja_semana
+    # Jerarquía exacta solicitada
+    orden_jerarquia = [
+        'NUMEROS DE SEMANA', 'NUMERO DE SEMANA', 'SEMANAS', 'CALENDARIO',
+        'TIEMPO TOTAL', 
+        'NATACION', 'NATACIÓN', 
+        'BICICLETA', 'CICLISMO', 
+        'TROTE', 'RUNNING', 
+        'CV', 
+        'KPI_ADHERENCIA_TPI'
+    ]
+    
+    claves_base_ordenadas = []
+    claves_semanas = []
+    claves_otras = []
+    
+    for clave_real in dict_dfs_actualizados.keys():
+        clave_limpia = clean_string(clave_real)
+        
+        # Aislar las hojas históricas de las semanas (Sem 08, Sem 07...)
+        if str(clave_real).strip().upper().startswith('SEM '):
+            claves_semanas.append(clave_real)
+        else:
+            if clave_limpia in orden_jerarquia:
+                claves_base_ordenadas.append((orden_jerarquia.index(clave_limpia), clave_real))
+            else:
+                claves_otras.append(clave_real)
+                
+    # Ordenar las bases por la jerarquía solicitada
+    claves_base_ordenadas.sort(key=lambda x: x[0])
+    
+    # Ordenar las semanas cronológicamente de forma descendente
+    claves_semanas.sort(reverse=True)
+    
+    # Ensamblar el Excel Final
+    for _, clave_real in claves_base_ordenadas:
+        dict_final_ordenado[clave_real] = dict_dfs_actualizados[clave_real]
+        
+    for clave_semana in claves_semanas:
+        dict_final_ordenado[clave_semana] = dict_dfs_actualizados[clave_semana]
+        
+    for clave_otra in claves_otras:
+        dict_final_ordenado[clave_otra] = dict_dfs_actualizados[clave_otra]
 
     return dict_final_ordenado
 
