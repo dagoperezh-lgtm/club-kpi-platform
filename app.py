@@ -439,7 +439,7 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
 # Esta sección es el corazón analítico del sistema. Cruza los datos reales 
 # obtenidos de Strava con las metas individuales o globales para calcular el TPI
 # (Índice de Rendimiento TYM). Garantiza que no existan valores nulos (0.0%)
-# ni errores de división por cero.
+# ni errores de división por cero. Ahora implementa un TPI Global Ponderado.
 
 def calcular_kpis_tym(df_real, df_plan, metas_globales):
     """
@@ -571,12 +571,24 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         # ---------------------------------------------------------------------
         # --- D. CÁLCULO DE INDICADORES GLOBALES DEL DEPORTISTA ---
         # ---------------------------------------------------------------------
-        # Promedio aritmético de la adherencia en las 3 disciplinas
-        resultados_kpi['TPI_Global'] = np.mean([
-            resultados_kpi['TPI_Natacion'], 
-            resultados_kpi['TPI_Ciclismo'], 
-            resultados_kpi['TPI_Trote']
-        ])
+        # CÁLCULO DEL TPI GLOBAL PONDERADO
+        # Calculamos el peso relativo de cada disciplina dentro del plan total semanal
+        total_horas_plan = horas_meta_natacion + horas_meta_ciclismo + horas_meta_trote
+        
+        if total_horas_plan > 0:
+            peso_n = horas_meta_natacion / total_horas_plan
+            peso_b = horas_meta_ciclismo / total_horas_plan
+            peso_r = horas_meta_trote / total_horas_plan
+            
+            # El TPI Global ahora es la suma de los éxitos multiplicados por el peso de su disciplina
+            resultados_kpi['TPI_Global'] = (
+                (resultados_kpi['TPI_Natacion'] * peso_n) +
+                (resultados_kpi['TPI_Ciclismo'] * peso_b) +
+                (resultados_kpi['TPI_Trote'] * peso_r)
+            )
+        else:
+            # Fallback de seguridad en caso de que el plan total sea 0 horas
+            resultados_kpi['TPI_Global'] = 0.0
         
         # Validación Estricta de "Triatleta Completo"
         # Debe registrar estrictamente más de 0 minutos en las TRES disciplinas.
