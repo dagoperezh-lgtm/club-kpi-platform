@@ -804,41 +804,50 @@ def generar_velocimetro_tpi(porcentaje):
     Dibuja un gráfico de velocímetro (Gauge Chart) semicircular para el TPI.
     """
     fig, ax = plt.subplots(figsize=(4, 2), subplot_kw={'projection': 'polar'})
-    
-    # Definimos las zonas de color
-    # 0-70% (Rojo), 70-90% (Amarillo), 90-115% (Verde)
     colors = ['#FF4C4C', '#FFD700', '#4CAF50']
-    
-    # Valores angulares (en radianes) para el semicírculo
     theta = np.linspace(0, np.pi, 100)
     
-    # Dibujamos las tres bandas
     ax.fill_between(np.linspace(np.pi, np.pi - (0.7 * np.pi), 50), 0.6, 1, color=colors[0], alpha=0.6)
     ax.fill_between(np.linspace(np.pi - (0.7 * np.pi), np.pi - (0.9 * np.pi), 50), 0.6, 1, color=colors[1], alpha=0.6)
     ax.fill_between(np.linspace(np.pi - (0.9 * np.pi), 0, 50), 0.6, 1, color=colors[2], alpha=0.6)
     
-    # Posición de la aguja (invertida porque 0 está a la derecha en polar)
-    # Si el porcentaje es mayor a 115, lo topamos para la gráfica
     p_grafico = min(porcentaje, 115)
     angulo_aguja = np.pi * (1 - (p_grafico / 115))
     
-    # Dibujar la aguja
     ax.plot([angulo_aguja, angulo_aguja], [0, 0.9], color='black', linewidth=3, solid_capstyle='round')
     ax.plot(angulo_aguja, 0.9, marker='^', color='black', markersize=8)
     ax.plot(0, 0, marker='o', color='black', markersize=10)
     
-    # Ajustes estéticos
     ax.set_ylim(0, 1)
     ax.set_yticks([])
-    ax.set_xticks(np.pi * np.array([1, 0.39, 0.21, 0])) # 0, 70%, 90%, 115%
+    ax.set_xticks(np.pi * np.array([1, 0.39, 0.21, 0]))
     ax.set_xticklabels(['0%', '70%', '90%', '115%'], fontsize=10, weight='bold')
     ax.spines['polar'].set_visible(False)
     
-    # Añadir el texto gigante en el centro
-    plt.text(0.5, 0.1, f"{porcentaje:.1f}%", transform=ax.transAxes, 
-             fontsize=20, weight='bold', ha='center', va='center')
+    plt.text(0.5, 0.1, f"{porcentaje:.1f}%", transform=ax.transAxes, fontsize=20, weight='bold', ha='center', va='center')
              
-    # Guardar en buffer temporal
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', transparent=True, bbox_inches='tight', dpi=150)
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+def generar_grafico_distribucion(mins_natacion, mins_ciclismo, mins_trote):
+    """
+    Dibuja un gráfico de anillo para mostrar la distribución de disciplinas.
+    """
+    fig, ax = plt.subplots(figsize=(4, 4))
+    sizes = [mins_natacion, mins_ciclismo, mins_trote]
+    labels = ['Natación', 'Ciclismo', 'Trote']
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c'] # Azul, Naranja, Verde
+    
+    # Prevenir error si no hay datos
+    if sum(sizes) == 0:
+        sizes, labels = [1, 1, 1], ['Sin Datos', 'Sin Datos', 'Sin Datos']
+        
+    wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors, wedgeprops=dict(width=0.4, edgecolor='w'))
+    plt.setp(autotexts, size=10, weight="bold", color="white")
+    
     buf = io.BytesIO()
     plt.savefig(buf, format='png', transparent=True, bbox_inches='tight', dpi=150)
     plt.close(fig)
@@ -846,9 +855,6 @@ def generar_velocimetro_tpi(porcentaje):
     return buf
 
 def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado, etiqueta_semana):
-    """
-    Construye en memoria (RAM) los tres archivos solicitados por separado.
-    """
     
     # =========================================================================
     # FASE 2: PRE-CÁLCULOS MATEMÁTICOS PARA ANÁLISIS COMPARATIVO
@@ -889,17 +895,71 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     buffer_excel.seek(0)
     
     # =========================================================================
-    # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD AVANZADO)
+    # 6.2: GENERACIÓN DEL REPORTE GRUPAL DEL CLUB (WORD AVANZADO PÁGINA POR PÁGINA)
     # =========================================================================
     doc_grupal = Document()
     num_semana = str(etiqueta_semana).replace('Sem ', '')
+    
+    # --- PÁGINA 1: PORTADA, INTRODUCCIÓN Y DATOS GENERALES ---
     doc_grupal.add_heading(f"Reporte Semanal Club Tym Triatlón \nSemana {num_semana}", 0)
     
-    doc_grupal.add_paragraph("Bienvenidos al reporte de la Semana, donde el club decidió que la gravedad es opcional y el entrenamiento, para varios, también. Mientras unos pocos defienden el honor técnico, el resto parece competir por la mejor excusa para evitar la piscina. Antes de los números, un abrazo gigante al Loco Araya; ese fémur fracturado es solo un bache para un guerrero como tú, ¡te esperamos pronto en la ruta! Ahora, vamos a los datos, que algunos explican mucho y otros confiesan poco.")
+    doc_grupal.add_heading("1. Introducción General", level=1)
+    p_intro = doc_grupal.add_paragraph()
+    run_intro = p_intro.add_run("[ESPACIO PARA EDICIÓN MANUAL: Inserta aquí tu introducción de 4 líneas]")
+    run_intro.bold = True
+    run_intro.font.color.rgb = RGBColor(255, 0, 0)
     
-    # --- 1. SECCIÓN PRINCIPAL: ADHERENCIA AL PLAN (TPI) ---
-    doc_grupal.add_heading("📈 1. ADHERENCIA AL PLAN (TPI GLOBAL)", level=1)
-    doc_grupal.add_paragraph("💡 Índice de Rendimiento TYM (TPI): Este indicador refleja el nivel de compromiso del deportista con su planificación semanal. Un 100% indica ejecución perfecta de horas y sesiones. A continuación, los 15 deportistas con mayor disciplina táctica de la semana.")
+    doc_grupal.add_heading("2. Datos Generales de la Semana", level=1)
+    df_activos = df_semanal_procesado[df_semanal_procesado['T_Mins_Real'] > 0]
+    mins_n = df_activos['N_Mins_Real'].sum()
+    mins_b = df_activos['B_Mins_Real'].sum()
+    mins_r = df_activos['R_Mins_Real'].sum()
+    mins_totales = df_activos['T_Mins_Real'].sum()
+    
+    p_res = doc_grupal.add_paragraph()
+    p_res.add_run(f"Atletas activos esta semana: {len(df_activos)}\n").bold = True
+    p_res.add_run(f"Horas de entrenamiento total del Equipo: {to_hhmm_display(mins_totales)}\n\n").bold = True
+    p_res.add_run(f"Distribución por disciplina:\n")
+    p_res.add_run(f"• Natación: {to_hhmm_display(mins_n)}\n")
+    p_res.add_run(f"• Ciclismo: {to_hhmm_display(mins_b)}\n")
+    p_res.add_run(f"• Trote: {to_hhmm_display(mins_r)}")
+    
+    doc_grupal.add_heading("Distribución Gráfica", level=2)
+    img_dist = generar_grafico_distribucion(mins_n, mins_b, mins_r)
+    para_img_dist = doc_grupal.add_paragraph()
+    para_img_dist.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    para_img_dist.add_run().add_picture(img_dist, width=Inches(3.5))
+    doc_grupal.add_page_break() # Fin Página 1
+
+    # --- PÁGINA 2: TOP 5 COMPLETOS ---
+    doc_grupal.add_heading("3. TOP 5 TRIATLETAS COMPLETOS", level=1)
+    doc_grupal.add_paragraph("(Entrenamiento registrado en las 3 disciplinas)")
+    
+    tabla_completos = doc_grupal.add_table(rows=1, cols=6)
+    tabla_completos.style = 'Light Grid Accent 1'
+    cc = tabla_completos.rows[0].cells
+    cc[0].text, cc[1].text, cc[2].text = '#', 'Deportista', 'Tiempo Total'
+    cc[3].text, cc[4].text, cc[5].text = 'Natación', 'Bici', 'Trote'
+    
+    df_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
+    df_top_completos = df_completos.sort_values(by='T_Mins_Real', ascending=False).head(5)
+    
+    for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
+        rc = tabla_completos.add_row().cells
+        rc[0].text, rc[1].text = str(pos), str(fila['Deportista'])
+        rc[2].text = to_hhmm_display(fila['T_Mins_Real'])
+        rc[3].text = to_hhmm_display(fila['N_Mins_Real'])
+        rc[4].text = to_hhmm_display(fila['B_Mins_Real'])
+        rc[5].text = to_hhmm_display(fila['R_Mins_Real'])
+        
+    doc_grupal.add_heading("Comentarios del Grupo de Élite (Completos):", level=2)
+    for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
+        comentario = generar_comentario(fila, 'CV', pos)
+        doc_grupal.add_paragraph(f"🏅 {fila['Deportista']}: {comentario}")
+    doc_grupal.add_page_break() # Fin Página 2
+
+    # --- PÁGINA 3: TOP 15 ADHERENCIA AL PLAN ---
+    doc_grupal.add_heading("📈 4. TOP 15 ADHERENCIA AL PLAN (TPI GLOBAL)", level=1)
     
     tabla_tpi = doc_grupal.add_table(rows=1, cols=3)
     tabla_tpi.style = 'Light Grid Accent 1'
@@ -910,43 +970,23 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     for pos, (_, fila) in enumerate(df_ranking_tpi.iterrows(), 1):
         rc = tabla_tpi.add_row().cells
         rc[0].text, rc[1].text, rc[2].text = str(pos), str(fila['Deportista']), f"{fila['TPI_Global']:.1f}%"
+        
+    doc_grupal.add_heading("Comentarios del Podio (Adherencia):", level=2)
+    medallas = {1: "🥇", 2: "🥈", 3: "🥉"}
+    for pos, (_, fila) in enumerate(df_ranking_tpi.head(3).iterrows(), 1):
+        comentario = generar_comentario(fila, 'General', pos)
+        doc_grupal.add_paragraph(f"{medallas[pos]} {fila['Deportista']}: {comentario}")
+    doc_grupal.add_page_break() # Fin Página 3
 
-    # --- 2. RESUMEN GENERAL ---
-    doc_grupal.add_heading("🔍 Resumen General", level=1)
-    df_completos = df_semanal_procesado[df_semanal_procesado['Es_Completo'] == True]
-    
-    p_res = doc_grupal.add_paragraph()
-    p_res.add_run(f"Total deportistas registrados: {len(df_semanal_procesado)}\n").bold = True
-    p_res.add_run(f"Triatletas completos: {len(df_completos)}\n").bold = True
-    p_res.add_run(f"Horas totales del club: {to_hhmm_display(df_semanal_procesado['T_Mins_Real'].sum())}").bold = True
-
-    # --- 3. TOP 5 TRIATLETAS COMPLETOS ---
-    doc_grupal.add_heading("🏅 TOP 5 TRIATLETAS COMPLETOS", level=1)
-    doc_grupal.add_paragraph("\t(Entrenamiento en las 3 disciplinas)")
-    
-    tabla_completos = doc_grupal.add_table(rows=1, cols=6)
-    tabla_completos.style = 'Light Grid Accent 1'
-    cc = tabla_completos.rows[0].cells
-    cc[0].text, cc[1].text, cc[2].text = '#', 'Deportista', 'Tiempo Total'
-    cc[3].text, cc[4].text, cc[5].text = 'Natación', 'Bicicleta', 'Trote'
-    
-    df_top_completos = df_completos.sort_values(by='T_Mins_Real', ascending=False).head(5)
-    for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
-        rc = tabla_completos.add_row().cells
-        rc[0].text, rc[1].text = str(pos), str(fila['Deportista'])
-        rc[2].text = to_hhmm_display(fila['T_Mins_Real'])
-        rc[3].text = to_hhmm_display(fila['N_Mins_Real'])
-        rc[4].text = to_hhmm_display(fila['B_Mins_Real'])
-        rc[5].text = to_hhmm_display(fila['R_Mins_Real'])
-
-    # --- 4. TOP 15 POR DISCIPLINAS ---
-    disciplinas = [
-        ("🏊‍♂️ TOP 15 NATACIÓN", 'N_Mins_Real'),
-        ("🚴‍♂️ TOP 15 CICLISMO", 'B_Mins_Real'),
-        ("🏃‍♂️ TOP 15 TROTE", 'R_Mins_Real')
+    # --- PÁGINAS 4 a 7: TOP 15 POR TIEMPO Y DISCIPLINAS ---
+    bloques_tops = [
+        ("⏱️ 5. TOP 15 TIEMPO TOTAL", 'T_Mins_Real', 'General'),
+        ("🏊‍♂️ 6. TOP 15 NATACIÓN", 'N_Mins_Real', 'Natación'),
+        ("🚴‍♂️ 7. TOP 15 CICLISMO", 'B_Mins_Real', 'Bicicleta'),
+        ("🏃‍♂️ 8. TOP 15 TROTE", 'R_Mins_Real', 'Trote')
     ]
     
-    for titulo, columna in disciplinas:
+    for titulo, columna, categoria_frase in bloques_tops:
         doc_grupal.add_heading(titulo, level=1)
         tabla_disc = doc_grupal.add_table(rows=1, cols=3)
         tabla_disc.style = 'Light Grid Accent 1'
@@ -957,20 +997,120 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         for pos, (_, fila) in enumerate(df_disc.iterrows(), 1):
             rc = tabla_disc.add_row().cells
             rc[0].text, rc[1].text, rc[2].text = str(pos), str(fila['Deportista']), to_hhmm_display(fila[columna])
+            
+        doc_grupal.add_heading(f"Comentarios del Podio ({categoria_frase}):", level=2)
+        for pos, (_, fila) in enumerate(df_disc.head(3).iterrows(), 1):
+            comentario = generar_comentario(fila, categoria_frase, pos)
+            doc_grupal.add_paragraph(f"{medallas[pos]} {fila['Deportista']}: {comentario}")
+        
+        doc_grupal.add_page_break()
 
-    # --- 5. INSIGHTS ESTRATÉGICOS ---
-    doc_grupal.add_heading("💡 Insights Estratégicos (O por qué hacemos lo que hacemos)", level=1)
+    # --- PÁGINA 8: ESTRATEGIA Y CONCLUSIONES ---
+    doc_grupal.add_heading("💡 9. Insights Estratégicos", level=1)
     p_ins = doc_grupal.add_paragraph()
     p_ins.add_run("Bici-dependencia Crónica: ").bold = True
     p_ins.add_run("El ciclismo sigue siendo el \"hijo favorito\". Representa la mayor parte del tiempo total del club. Básicamente, si le quitamos las bicicletas a este equipo, el reporte semanal cabría en una servilleta.\n")
     p_ins.add_run("El \"Efecto Claudio\": ").bold = True
     p_ins.add_run("Una lección magistral de cómo liderar el ciclismo y aun así bajar en el ranking general por el \"pequeño\" detalle de no tocar el agua. Recordatorio amistoso: el Triatlón, por definición, incluye nadar.\n")
     p_ins.add_run("Resiliencia en el Asfalto: ").bold = True
-    p_ins.add_run("Mientras el volumen general bajaba, el trote sacó la cara con registros notables de carrera a pie, dejando en vergüenza los registros máximos de la semana pasada. Parece que algunos sí desayunaron ganas de correr.\n")
+    p_ins.add_run("Mientras el volumen general bajaba, el trote sacó la cara con registros notables de carrera a pie. Parece que algunos sí desayunaron ganas de correr.\n")
+    
+    doc_grupal.add_heading("10. Conclusiones Generales", level=1)
+    p_cierre = doc_grupal.add_paragraph()
+    run_cierre = p_cierre.add_run("[ESPACIO PARA EDICIÓN MANUAL: Inserta aquí tus conclusiones finales y el cierre de la semana]")
+    run_cierre.bold = True
+    run_cierre.font.color.rgb = RGBColor(255, 0, 0)
 
     buffer_word_grupal = io.BytesIO()
     doc_grupal.save(buffer_word_grupal)
     buffer_word_grupal.seek(0)
+
+    # =========================================================================
+    # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (ZIP) - INTACTO Y FUNCIONAL
+    # =========================================================================
+    buffer_zip_fichas = io.BytesIO()
+    
+    with zipfile.ZipFile(buffer_zip_fichas, "a", zipfile.ZIP_DEFLATED) as archivo_zip:
+        
+        for index, row_atleta in df_semanal_procesado.iterrows():
+            if row_atleta['T_Mins_Real'] > 0:
+                doc_i = Document()
+                doc_i.add_heading(f"Análisis de Rendimiento Personal: {row_atleta['Deportista']}", 0)
+                doc_i.add_paragraph(f"Semana de Entrenamiento: {num_semana}").bold = True
+                
+                # --- BLOQUE 1: VELOCÍMETRO DE ADHERENCIA (TPI) ---
+                doc_i.add_heading("CUMPLIMIENTO DE PLAN (TPI)", level=2)
+                p_tpi_intro = doc_i.add_paragraph("Tu Índice de Adherencia Global esta semana:")
+                p_tpi_intro.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                img_velocimetro = generar_velocimetro_tpi(row_atleta['TPI_Global'])
+                para_img = doc_i.add_paragraph()
+                para_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                para_img.add_run().add_picture(img_velocimetro, width=Inches(3.5))
+                
+                tabla_desglose = doc_i.add_table(rows=1, cols=4)
+                tabla_desglose.style = 'Table Grid'
+                c_cab = tabla_desglose.rows[0].cells
+                c_cab[0].text, c_cab[1].text, c_cab[2].text, c_cab[3].text = 'Disciplina', 'Real', 'Meta', 'TPI %'
+                
+                matriz = [
+                    ('Natación', 'N_Mins_Real', 'Natacion_Plan_Hrs', 'TPI_Natacion'),
+                    ('Ciclismo', 'B_Mins_Real', 'Ciclismo_Plan_Hrs', 'TPI_Ciclismo'),
+                    ('Trote', 'R_Mins_Real', 'Trote_Plan_Hrs', 'TPI_Trote')
+                ]
+                
+                for d, c_r, c_m, c_tpi in matriz:
+                    rc = tabla_desglose.add_row().cells
+                    rc[0].text = d
+                    rc[1].text = to_hhmm_display(row_atleta[c_r])
+                    rc[2].text = f"{row_atleta[c_m]:.1f}h"
+                    
+                    run_tpi = rc[3].paragraphs[0].add_run(f"{row_atleta[c_tpi]:.1f}%")
+                    run_tpi.bold = True
+                    tpi_val = row_atleta[c_tpi]
+                    if tpi_val < 70:
+                        run_tpi.font.color.rgb = RGBColor(255, 0, 0)
+                    elif tpi_val <= 90:
+                        run_tpi.font.color.rgb = RGBColor(204, 153, 0)
+                    else:
+                        run_tpi.font.color.rgb = RGBColor(0, 153, 0)
+
+                # --- BLOQUE 2: ANÁLISIS HISTÓRICO COMPARATIVO ---
+                mk = row_atleta['MatchKey']
+                bloques_analisis = [
+                    ('TIEMPO TOTAL', 'T_Mins_Real', 'Total', 'TIEMPO TOTAL'),
+                    ('NATACIÓN', 'N_Mins_Real', 'Natacion', 'NATACION'),
+                    ('CICLISMO', 'B_Mins_Real', 'Ciclismo', 'BICICLETA'),
+                    ('TROTE', 'R_Mins_Real', 'Trote', 'TROTE')
+                ]
+                
+                for titulo, col_real, llave_equipo, hoja_historia in bloques_analisis:
+                    doc_i.add_heading(titulo, level=2)
+                    p_dato = doc_i.add_paragraph()
+                    p_dato.add_run(f"Volumen actual: {to_hhmm_display(row_atleta[col_real])} ").bold = True
+                    hist_mins = obtener_media_historica(mk, hoja_historia)
+                    texto_comp = redactar_comparacion(row_atleta[col_real], promedio_equipo[llave_equipo], hist_mins)
+                    p_dato.add_run(texto_comp)
+
+                # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
+                doc_i.add_heading("Evaluación Técnica", level=2)
+                pos = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
+                rango_actual = pos[0] + 1 if pos else 99
+                doc_i.add_paragraph(generar_comentario(row_atleta, 'General', rango_actual))
+                
+                doc_i.add_paragraph("\n──────────────────────────────────────────────────")
+                doc_i.add_paragraph("Generado por Plataforma TYM Performance")
+                
+                buffer_word_individual = io.BytesIO()
+                doc_i.save(buffer_word_individual)
+                archivo_zip.writestr(f"Reporte_{clean_string(row_atleta['Deportista'])}.docx", buffer_word_individual.getvalue())
+
+    buffer_zip_fichas.seek(0)
+    return {
+        'excel_maestro': buffer_excel,
+        'word_grupal': buffer_word_grupal,
+        'zip_fichas': buffer_zip_fichas
+    }
 
     # =========================================================================
     # 6.3: GENERACIÓN DE FICHAS INDIVIDUALES (ZIP)
