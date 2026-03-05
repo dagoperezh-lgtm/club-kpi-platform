@@ -619,6 +619,7 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
 # aplica la conversión a formato HH:MM estricto, reordena las columnas de 
 # semanas, inyecta la hoja de KPIs, redondea el CV a 2 decimales y aplica
 # un ordenamiento estricto y jerárquico a las pestañas del archivo final.
+# NUEVO: Genera y actualiza automáticamente la hoja 'Histórico_TPI'.
 
 def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_semana):
     """
@@ -627,6 +628,16 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
     y que la historia no se borre ni se convierta en ceros, formateando todo a HH:MM.
     """
     dict_dfs_actualizados = {}
+
+    # --- NUEVA EXPANSIÓN: ASEGURAR EXISTENCIA DE LA HOJA HISTÓRICO TPI ---
+    # Verificamos si ya existe una hoja para el histórico de adherencia
+    hoja_tpi_existente = any(clean_string(k) in ['HISTORICO_TPI', 'HISTÓRICO_TPI', 'HISTORICOTPI'] for k in dict_dfs_originales.keys())
+    
+    if not hoja_tpi_existente:
+        # Si no existe, la creamos como una hoja base con los deportistas de la semana actual
+        df_historico_tpi = pd.DataFrame()
+        df_historico_tpi['Deportista'] = df_semana_actual['Deportista']
+        dict_dfs_originales['Histórico_TPI'] = df_historico_tpi
 
     # 1. Mapeo Extendido de Disciplinas (Sincronización de Pestañas)
     mapeo_hojas_a_datos = {
@@ -637,7 +648,10 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         'CICLISMO': 'B_Mins_Real',
         'TROTE': 'R_Mins_Real',
         'RUNNING': 'R_Mins_Real',
-        'CV': 'TPI_Global'
+        'CV': 'TPI_Global',
+        'HISTORICO_TPI': 'TPI_Global',
+        'HISTÓRICO_TPI': 'TPI_Global',
+        'HISTORICOTPI': 'TPI_Global'
     }
 
     # Normalizamos los nombres de las pestañas reales del archivo subido
@@ -674,7 +688,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
                 if columna_datos_a_extraer != 'TPI_Global':
                     df_hoja_historia[col_vieja] = df_hoja_historia[col_vieja].apply(to_mins)
                 else:
-                    # En la hoja CV forzamos a numérico y aplicamos el límite de 2 decimales
+                    # En las hojas de TPI/CV forzamos a numérico y aplicamos el límite de 2 decimales
                     df_hoja_historia[col_vieja] = pd.to_numeric(df_hoja_historia[col_vieja], errors='coerce').fillna(0.0).round(2)
 
             # --- PREPARACIÓN DE LA NOVEDAD (DATOS DE LA SEMANA) ---
@@ -683,7 +697,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
             if columna_datos_a_extraer != 'TPI_Global':
                 df_novedad[etiqueta_semana] = df_novedad[columna_datos_a_extraer]
             else:
-                # La novedad de CV también se redondea a 2 decimales
+                # La novedad de TPI/CV también se redondea a 2 decimales
                 df_novedad[etiqueta_semana] = (df_novedad[columna_datos_a_extraer] / 100.0).round(2)
 
             # Eliminamos duplicados
@@ -721,7 +735,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
                 if 'Promedio' in df_actualizado.columns:
                     df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1)
             else:
-                # Para el CV también calculamos el promedio histórico redondeado a 2 decimales
+                # Para el TPI/CV también calculamos el promedio histórico redondeado a 2 decimales
                 if 'Promedio' in df_actualizado.columns:
                     df_actualizado['Promedio'] = df_actualizado[columnas_todas_semanas].mean(axis=1).round(2)
 
@@ -785,6 +799,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         'BICICLETA', 'CICLISMO', 
         'TROTE', 'RUNNING', 
         'CV', 
+        'HISTORICO_TPI', 'HISTÓRICO_TPI', 'HISTORICOTPI',
         'KPI_ADHERENCIA_TPI'
     ]
     
@@ -821,7 +836,6 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
         dict_final_ordenado[clave_otra] = dict_dfs_actualizados[clave_otra]
 
     return dict_final_ordenado
-
 
 # =============================================================================
 # FIN DE SECCIÓN 5
