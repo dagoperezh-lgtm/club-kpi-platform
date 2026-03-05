@@ -847,6 +847,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # Esta versión mantiene la estructura vertical extendida. Incluye el candado
 # estricto de columnas para forzar a Word a respetar los márgenes, el centrado
 # absoluto de tablas y el filtro de elegibilidad para TPI.
+# NUEVO: Integración del Velocímetro Global del Equipo en la Portada (Dashboard Dual).
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1028,20 +1029,43 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     mins_r = df_activos['R_Mins_Real'].sum()
     mins_totales = df_activos['T_Mins_Real'].sum()
     
+    # Cálculo del nuevo KPI Global del Equipo
+    tpi_promedio_equipo = df_activos['TPI_Global'].mean() if not df_activos.empty else 0.0
+    
     p_res = doc_grupal.add_paragraph()
     p_res.add_run(f"Atletas activos esta semana: {len(df_activos)}\n").bold = True
-    p_res.add_run(f"Horas de entrenamiento total del Equipo: {to_hhmm_display(mins_totales)}\n\n").bold = True
+    p_res.add_run(f"Horas de entrenamiento total del Equipo: {to_hhmm_display(mins_totales)}\n").bold = True
+    p_res.add_run(f"Cumplimiento Promedio del Equipo (TPI): {tpi_promedio_equipo:.1f}%\n\n").bold = True
     p_res.add_run(f"Distribución por disciplina:\n")
     p_res.add_run(f"• Natación: {to_hhmm_display(mins_n)}\n")
     p_res.add_run(f"• Ciclismo: {to_hhmm_display(mins_b)}\n")
     p_res.add_run(f"• Trote: {to_hhmm_display(mins_r)}")
     doc_grupal.add_paragraph("") 
     
-    doc_grupal.add_heading("Distribución Gráfica", level=2)
+    # Dashboard Dual: Tabla invisible para gráficos lado a lado
+    doc_grupal.add_heading("Visión Gráfica del Equipo", level=2)
+    
+    tabla_graficos = doc_grupal.add_table(rows=1, cols=2)
+    # Ancho total = 5.6 pulgadas (Encaja perfecto en los márgenes de Word)
+    ajustar_anchos_y_centrar_tabla(tabla_graficos, [Inches(2.8), Inches(2.8)])
+    
+    celda_anillo = tabla_graficos.rows[0].cells[0]
+    celda_tpi = tabla_graficos.rows[0].cells[1]
+    
+    # Gráfico 1: Anillo de Disciplinas (Izquierda)
     img_dist = generar_grafico_distribucion(mins_n, mins_b, mins_r)
-    para_img_dist = doc_grupal.add_paragraph()
-    para_img_dist.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    para_img_dist.add_run().add_picture(img_dist, width=Inches(3.5))
+    p_anillo = celda_anillo.paragraphs[0]
+    p_anillo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_anillo.add_run("Distribución de Horas\n").bold = True
+    p_anillo.add_run().add_picture(img_dist, width=Inches(2.7))
+    
+    # Gráfico 2: Velocímetro Global (Derecha)
+    img_tpi_global = generar_velocimetro_tpi(tpi_promedio_equipo)
+    p_tpi = celda_tpi.paragraphs[0]
+    p_tpi.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_tpi.add_run("Adherencia al Plan (TPI)\n").bold = True
+    p_tpi.add_run().add_picture(img_tpi_global, width=Inches(2.7))
+    
     doc_grupal.add_page_break() 
 
     # --- PÁGINA 2: TOP 5 COMPLETOS ---
