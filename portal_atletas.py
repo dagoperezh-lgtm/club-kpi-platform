@@ -9,10 +9,10 @@ st.set_page_config(page_title="Portal Atletas - Metri KM", page_icon="🏃‍♂
 # 1. CREDENCIALES DE STRAVA
 # =====================================================================
 CLIENT_ID = "162131"
-CLIENT_SECRET = "TU_CLIENT_SECRET" # <-- ¡PON TU SECRET REAL AQUÍ!
+CLIENT_SECRET = "f827c4de29d7334330b43fdd04a99d900df566c2" # <-- ¡PON TU SECRET REAL AQUÍ!
 
 # ATENCIÓN: Esta URL la cambiaremos en el Paso 3, por ahora déjala así
-REDIRECT_URI = "https://tu-nueva-url-del-portal.streamlit.app/" 
+REDIRECT_URI = "https://club-kpi-platform-cej3krxg3wgv3a9on4a4d6.streamlit.app/" 
 ARCHIVO_BOVEDA = "boveda_strava.json"
 
 # =====================================================================
