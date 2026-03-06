@@ -6,8 +6,8 @@ from datetime import datetime
 st.set_page_config(page_title="Piloto Strava Lite", layout="centered")
 
 # --- 1. PON TUS CREDENCIALES AQUÍ ---
-CLIENT_ID = "TU_CLIENT_ID" # Ejemplo: "123456" (Déjalo entre comillas)
-CLIENT_SECRET = "TU_CLIENT_SECRET" # Ejemplo: "abc123def456..." (Entre comillas)
+CLIENT_ID = "162131" # Ejemplo: "123456" (Déjalo entre comillas)
+CLIENT_SECRET = "f827c4de29d7334330b43fdd04a99d900df566c2" # Ejemplo: "abc123def456..." (Entre comillas)
 REDIRECT_URI = "http://localhost:8501/"
 
 st.title("🚴‍♂️ Prueba Piloto: API de Strava")
