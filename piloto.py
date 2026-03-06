@@ -6,17 +6,19 @@ from datetime import datetime
 st.set_page_config(page_title="Piloto Strava Lite", layout="centered")
 
 # --- 1. PON TUS CREDENCIALES AQUÍ ---
-CLIENT_ID = "162131" # Ejemplo: "123456" (Déjalo entre comillas)
-CLIENT_SECRET = "f827c4de29d7334330b43fdd04a99d900df566c2" # Ejemplo: "abc123def456..." (Entre comillas)
-REDIRECT_URI = "http://localhost:8501/"
+CLIENT_ID = "TU_CLIENT_ID" # Ejemplo: "123456" (Déjalo entre comillas)
+CLIENT_SECRET = "TU_CLIENT_SECRET" # Ejemplo: "abc123def456..." (Entre comillas)
+
+# --- 2. PON TU URL DE STREAMLIT AQUÍ ---
+# ¡Importante! Debe tener https:// al principio y terminar con una barra /
+REDIRECT_URI = "TU_URL_DE_STREAMLIT_AQUI" 
 
 st.title("🚴‍♂️ Prueba Piloto: API de Strava")
 
-# --- 2. LEER LA URL PARA BUSCAR EL CÓDIGO DE PERMISO ---
-# Cuando Strava te devuelva a la app, pondrá un código secreto en la barra de direcciones web
+# --- 3. LEER LA URL PARA BUSCAR EL CÓDIGO DE PERMISO ---
 codigo_autorizacion = st.query_params.get("code")
 
-# --- 3. BOTÓN DE CONEXIÓN ---
+# --- 4. BOTÓN DE CONEXIÓN ---
 if not codigo_autorizacion:
     st.markdown("### Paso 1: Autorizar a Metri KM")
     st.info("Haz clic en el botón de abajo para ir a Strava y dar permiso para leer tus actividades.")
@@ -26,7 +28,7 @@ if not codigo_autorizacion:
     
     st.link_button("🔗 Conectar con mi cuenta de Strava", auth_url)
 
-# --- 4. EXTRACCIÓN DE DATOS ---
+# --- 5. EXTRACCIÓN DE DATOS ---
 else:
     st.success("✅ ¡Autorización recibida por Strava!")
     st.markdown("### Paso 2: Extrayendo tus datos...")
