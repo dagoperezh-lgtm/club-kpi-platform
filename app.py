@@ -1347,17 +1347,44 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
 # *****************************************************************************
 # SECCIÓN 7: INTERFAZ DE USUARIO, ORQUESTACIÓN Y CONSOLA DE DEBUG
 # *****************************************************************************
-# Esta sección construye el panel de control, ejecuta la cadena de motores
-# (Secciones 2 a 6) de forma secuencial y despliega los tres botones de 
-# descarga independientes generados por el orquestador.
 
 # -----------------------------------------------------------------------------
 # 7.1: CONFIGURACIÓN VISUAL DEL PANEL CENTRAL Y SIDEBAR
 # -----------------------------------------------------------------------------
-st.title("🏆 Plataforma de Rendimiento TYM v3.0")
-st.markdown("Generador de KPIs de adherencia (TPI), Motor Narrativo e Integridad de Excel.")
+# Configuración de la pestaña del navegador
+st.set_page_config(
+    page_title="Metri KM - TYM",
+    page_icon="⏱️",
+    layout="wide"
+)
 
+# --- Cabecera Principal (Logos y Título) ---
+col_izq, col_centro, col_der = st.columns([1, 6, 1])
+
+with col_izq:
+    try:
+        st.image("logo_metrikm.png", use_container_width=True)
+    except:
+        st.info("🖼️ Metri KM")
+
+with col_centro:
+    st.title("Metri KM - TYM")
+    st.markdown("### Plataforma de Inteligencia Deportiva y Adherencia al Plan")
+
+with col_der:
+    try:
+        st.image("Tym Logo.jpg", use_container_width=True)
+    except:
+        st.info("🖼️ TYM")
+
+# --- Panel Lateral (Sidebar) ---
 with st.sidebar:
+    # Logo superior en el menú de controles
+    try:
+        st.image("logo_metrikm.png", use_container_width=True)
+    except:
+        pass
+        
     st.header("⚙️ 1. Entradas de Sistema")
     st.markdown("Carga los archivos obligatorios para iniciar el procesamiento.")
     
