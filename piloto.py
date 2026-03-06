@@ -11,7 +11,7 @@ CLIENT_SECRET = "TU_CLIENT_SECRET" # Ejemplo: "abc123def456..." (Entre comillas)
 
 # --- 2. PON TU URL DE STREAMLIT AQUÍ ---
 # ¡Importante! Debe tener https:// al principio y terminar con una barra /
-REDIRECT_URI = "TU_URL_DE_STREAMLIT_AQUI" 
+REDIRECT_URI = "https://metrikm-piloto.streamlit.app/"
 
 st.title("🚴‍♂️ Prueba Piloto: API de Strava")
 
