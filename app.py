@@ -848,7 +848,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # estricto de columnas para forzar a Word a respetar los márgenes, el centrado
 # absoluto de tablas y el filtro de elegibilidad para TPI.
 # NUEVO: Integración del Velocímetro Global del Equipo en la Portada (Dashboard Dual).
-# NUEVO: Integración de logos institucionales (TYM y Metri KM) en los reportes Word.
+# NUEVO: Inyección de membretes corporativos en los ENCABEZADOS (Headers) de Word.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1010,13 +1010,15 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
-    # --- NUEVO: MEMBRETE LOGO TYM (CENTRADO) PARA REPORTE GRUPAL ---
+    # --- NUEVO: MEMBRETE EN EL ENCABEZADO (HEADER) - REPORTE GRUPAL ---
     try:
-        doc_grupal.add_picture("Tym Logo.jpg", width=Inches(1.5))
-        doc_grupal.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_grupal = doc_grupal.sections[0].header
+        p_head_g = header_grupal.paragraphs[0]
+        p_head_g.alignment = WD_ALIGN_PARAGRAPH.RIGHT # Alineado a la esquina derecha
+        p_head_g.add_run().add_picture("Tym Logo.jpg", width=Inches(0.8)) # Tamaño corporativo (0.8)
     except Exception:
-        pass # Si no encuentra la imagen, continúa sin error
-    # ---------------------------------------------------------------
+        pass 
+    # ------------------------------------------------------------------
 
     num_semana = str(etiqueta_semana).replace('Sem ', '')
     
@@ -1122,16 +1124,10 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     
     # Filtro estricto para Adherencia
     def es_elegible_para_podio_tpi(row):
-        # Si la meta de plan es > 0 pero el real es 0, queda fuera.
-        if row.get('Natacion_Plan_Hrs', 0) > 0 and row.get('N_Mins_Real', 0) == 0:
-            return False
-        if row.get('Ciclismo_Plan_Hrs', 0) > 0 and row.get('B_Mins_Real', 0) == 0:
-            return False
-        if row.get('Trote_Plan_Hrs', 0) > 0 and row.get('R_Mins_Real', 0) == 0:
-            return False
-        # Debe haber registrado al menos alguna actividad en total
-        if row.get('T_Mins_Real', 0) == 0:
-            return False
+        if row.get('Natacion_Plan_Hrs', 0) > 0 and row.get('N_Mins_Real', 0) == 0: return False
+        if row.get('Ciclismo_Plan_Hrs', 0) > 0 and row.get('B_Mins_Real', 0) == 0: return False
+        if row.get('Trote_Plan_Hrs', 0) > 0 and row.get('R_Mins_Real', 0) == 0: return False
+        if row.get('T_Mins_Real', 0) == 0: return False
         return True
         
     df_elegibles_tpi = df_semanal_procesado[df_semanal_procesado.apply(es_elegible_para_podio_tpi, axis=1)]
@@ -1139,8 +1135,6 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     
     tabla_tpi = doc_grupal.add_table(rows=1, cols=3)
     tabla_tpi.style = 'Light Grid Accent 1'
-    
-    # Ancho total = 5.5 pulgadas (Centrado y dentro de los márgenes)
     ajustar_anchos_y_centrar_tabla(tabla_tpi, [Inches(0.5), Inches(3.5), Inches(1.5)])
     
     c_tpi = tabla_tpi.rows[0].cells
@@ -1178,8 +1172,6 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         
         tabla_disc = doc_grupal.add_table(rows=1, cols=3)
         tabla_disc.style = 'Light Grid Accent 1'
-        
-        # Ancho total = 5.5 pulgadas (Centrado y dentro de los márgenes)
         ajustar_anchos_y_centrar_tabla(tabla_disc, [Inches(0.5), Inches(3.5), Inches(1.5)])
         
         cd = tabla_disc.rows[0].cells
@@ -1248,29 +1240,26 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 font_ind.name = 'Calibri'
                 font_ind.size = Pt(11)
                 
-                # --- NUEVO: CABECERA DOBLE LOGO (TABLA INVISIBLE) ---
-                tabla_logos = doc_i.add_table(rows=1, cols=2)
-                celda_izq = tabla_logos.cell(0, 0)
-                celda_der = tabla_logos.cell(0, 1)
-                
-                # Logo Metri KM a la Izquierda
+                # --- NUEVO: MEMBRETE DOBLE EN EL ENCABEZADO - FICHAS INDIVIDUALES ---
                 try:
+                    header_i = doc_i.sections[0].header
+                    # Creamos una tabla invisible en el encabezado para posicionar en los extremos
+                    tabla_header = header_i.add_table(rows=1, cols=2, width=Inches(6.5))
+                    
+                    # Logo Metri KM a la Izquierda
+                    celda_izq = tabla_header.cell(0, 0)
                     p_izq = celda_izq.paragraphs[0]
                     p_izq.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    run_izq = p_izq.add_run()
-                    run_izq.add_picture("logo_metrikm.png", width=Inches(1.2)) 
-                except Exception:
-                    pass
+                    p_izq.add_run().add_picture("logo_metrikm.png", width=Inches(0.8))
                     
-                # Logo TYM a la Derecha
-                try:
+                    # Logo TYM a la Derecha
+                    celda_der = tabla_header.cell(0, 1)
                     p_der = celda_der.paragraphs[0]
                     p_der.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-                    run_der = p_der.add_run()
-                    run_der.add_picture("Tym Logo.jpg", width=Inches(1.2))
+                    p_der.add_run().add_picture("Tym Logo.jpg", width=Inches(0.8))
                 except Exception:
                     pass
-                # ----------------------------------------------------
+                # --------------------------------------------------------------------
                 
                 doc_i.add_heading(f"Análisis de Rendimiento Personal: {row_atleta['Deportista']}", 0)
                 
@@ -1349,13 +1338,8 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
                 doc_i.add_heading("Evaluación Técnica", level=2)
                 
-                # El ranking para la narrativa siempre usará la posición del TPI General
                 pos = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
-                
-                if pos:
-                    rango_actual = pos[0] + 1
-                else:
-                    rango_actual = 99
+                rango_actual = pos[0] + 1 if pos else 99
                     
                 texto_comentario = generar_comentario(row_atleta, 'General', rango_actual)
                 doc_i.add_paragraph(texto_comentario)
