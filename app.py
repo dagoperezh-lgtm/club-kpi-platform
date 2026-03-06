@@ -848,6 +848,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # estricto de columnas para forzar a Word a respetar los márgenes, el centrado
 # absoluto de tablas y el filtro de elegibilidad para TPI.
 # NUEVO: Integración del Velocímetro Global del Equipo en la Portada (Dashboard Dual).
+# NUEVO: Integración de logos institucionales (TYM y Metri KM) en los reportes Word.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1009,6 +1010,14 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     font_normal.name = 'Calibri'
     font_normal.size = Pt(11)
 
+    # --- NUEVO: MEMBRETE LOGO TYM (CENTRADO) PARA REPORTE GRUPAL ---
+    try:
+        doc_grupal.add_picture("Tym Logo.jpg", width=Inches(1.5))
+        doc_grupal.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+    except Exception:
+        pass # Si no encuentra la imagen, continúa sin error
+    # ---------------------------------------------------------------
+
     num_semana = str(etiqueta_semana).replace('Sem ', '')
     
     # --- PÁGINA 1: PORTADA, INTRODUCCIÓN Y DATOS GENERALES ---
@@ -1151,7 +1160,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     medallas = {1: "🥇", 2: "🥈", 3: "🥉"}
     for pos, (_, fila) in enumerate(df_ranking_tpi.head(3).iterrows(), 1):
         comentario = generar_comentario(fila, 'TPI', pos)
-        doc_grupal.add_paragraph(f"{medallas[pos]} {fila['Deportista']}: {comentario}")
+        doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {fila['Deportista']}: {comentario}")
         
     doc_grupal.add_page_break() 
 
@@ -1190,7 +1199,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         doc_grupal.add_heading(f"Comentarios del Podio ({categoria_frase}):", level=2)
         for pos, (_, fila) in enumerate(df_disc.head(3).iterrows(), 1):
             comentario = generar_comentario(fila, categoria_frase, pos)
-            doc_grupal.add_paragraph(f"{medallas[pos]} {fila['Deportista']}: {comentario}")
+            doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {fila['Deportista']}: {comentario}")
         
         doc_grupal.add_page_break()
 
@@ -1238,6 +1247,30 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 font_ind = style_ind.font
                 font_ind.name = 'Calibri'
                 font_ind.size = Pt(11)
+                
+                # --- NUEVO: CABECERA DOBLE LOGO (TABLA INVISIBLE) ---
+                tabla_logos = doc_i.add_table(rows=1, cols=2)
+                celda_izq = tabla_logos.cell(0, 0)
+                celda_der = tabla_logos.cell(0, 1)
+                
+                # Logo Metri KM a la Izquierda
+                try:
+                    p_izq = celda_izq.paragraphs[0]
+                    p_izq.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    run_izq = p_izq.add_run()
+                    run_izq.add_picture("logo_metrikm.png", width=Inches(1.2)) 
+                except Exception:
+                    pass
+                    
+                # Logo TYM a la Derecha
+                try:
+                    p_der = celda_der.paragraphs[0]
+                    p_der.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    run_der = p_der.add_run()
+                    run_der.add_picture("Tym Logo.jpg", width=Inches(1.2))
+                except Exception:
+                    pass
+                # ----------------------------------------------------
                 
                 doc_i.add_heading(f"Análisis de Rendimiento Personal: {row_atleta['Deportista']}", 0)
                 
@@ -1328,7 +1361,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 doc_i.add_paragraph(texto_comentario)
                 
                 doc_i.add_paragraph("\n──────────────────────────────────────────────────")
-                doc_i.add_paragraph("Generado por Plataforma TYM Performance")
+                doc_i.add_paragraph("Generado por Plataforma Metri KM - TYM")
                 
                 buffer_word_individual = io.BytesIO()
                 doc_i.save(buffer_word_individual)
