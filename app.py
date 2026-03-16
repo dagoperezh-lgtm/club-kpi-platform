@@ -499,8 +499,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         else:
             sei_natacion = 0
         
-        # TPI Natación (Regla de negocio: 40% Volumen + 60% Sesiones), tope máximo de 115% de cumplimiento
-        tpi_natacion_crudo = (vci_natacion * 0.4) + (sei_natacion * 0.6)
+        # TPI Natación (Regla temporal: 100% Volumen hasta tener sesiones), tope máximo de 115% de cumplimiento
+        tpi_natacion_crudo = vci_natacion
         resultados_kpi['TPI_Natacion'] = min(tpi_natacion_crudo, 115)
         resultados_kpi['Natacion_Plan_Hrs'] = horas_meta_natacion
 
@@ -531,8 +531,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         else:
             sei_ciclismo = 0
         
-        # TPI Ciclismo
-        tpi_ciclismo_crudo = (vci_ciclismo * 0.4) + (sei_ciclismo * 0.6)
+        # TPI Ciclismo (Temporal: 100% Volumen)
+        tpi_ciclismo_crudo = vci_ciclismo
         resultados_kpi['TPI_Ciclismo'] = min(tpi_ciclismo_crudo, 115)
         resultados_kpi['Ciclismo_Plan_Hrs'] = horas_meta_ciclismo
 
@@ -563,8 +563,8 @@ def calcular_kpis_tym(df_real, df_plan, metas_globales):
         else:
             sei_trote = 0
         
-        # TPI Trote
-        tpi_trote_crudo = (vci_trote * 0.4) + (sei_trote * 0.6)
+        # TPI Trote (Temporal: 100% Volumen)
+        tpi_trote_crudo = vci_trote
         resultados_kpi['TPI_Trote'] = min(tpi_trote_crudo, 115)
         resultados_kpi['Trote_Plan_Hrs'] = horas_meta_trote
 
