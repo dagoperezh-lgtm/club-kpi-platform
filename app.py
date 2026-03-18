@@ -957,15 +957,27 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     }
 
     def obtener_media_historica(deportista_matchkey, hoja_maestro):
-        df_hoja = dict_maestro_actualizado.get(hoja_maestro)
-        if df_hoja is None:
+        # 1. Búsqueda dinámica de la hoja para superar diferencias de mayúsculas/tildes
+        df_hoja = None
+        for key_real in dict_maestro_actualizado.keys():
+            if clean_string(key_real) == clean_string(hoja_maestro):
+                df_hoja = dict_maestro_actualizado[key_real]
+                break
+                
+        if df_hoja is None or df_hoja.empty:
             return 0
-        if df_hoja.empty:
-            return 0
+            
         if 'Promedio' not in df_hoja.columns:
             return 0
             
-        fila_atleta = df_hoja[df_hoja['MatchKey'] == deportista_matchkey]
+        # 2. Identificación flexible de la columna de identidad (MatchKey ya no existe aquí)
+        col_identidad_maestro = 'Nombre' if 'Nombre' in df_hoja.columns else \
+                               ('Deportista' if 'Deportista' in df_hoja.columns else df_hoja.columns[0])
+                               
+        # 3. Búsqueda del atleta homologando la identidad en tiempo de ejecución
+        mask_atleta = df_hoja[col_identidad_maestro].apply(clean_string) == deportista_matchkey
+        fila_atleta = df_hoja[mask_atleta]
+        
         if not fila_atleta.empty:
             return to_mins(fila_atleta['Promedio'].values[0])
         return 0
