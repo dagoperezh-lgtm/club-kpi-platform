@@ -957,10 +957,24 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     }
 
     def obtener_media_historica(deportista_matchkey, hoja_maestro):
-        # 1. Búsqueda dinámica de la hoja para superar diferencias de mayúsculas/tildes
+        # 1. Búsqueda dinámica de la hoja para superar diferencias de mayúsculas/tildes y sinónimos
         df_hoja = None
+        hoja_limpia = clean_string(hoja_maestro)
+        
+        # Diccionario visual de sinónimos para asegurar cruce exacto
+        sinonimos_bici = ['BICICLETA', 'CICLISMO']
+        sinonimos_trote = ['TROTE', 'RUNNING']
+        
         for key_real in dict_maestro_actualizado.keys():
-            if clean_string(key_real) == clean_string(hoja_maestro):
+            key_limpia = clean_string(key_real)
+            
+            if key_limpia == hoja_limpia:
+                df_hoja = dict_maestro_actualizado[key_real]
+                break
+            elif hoja_limpia in sinonimos_bici and key_limpia in sinonimos_bici:
+                df_hoja = dict_maestro_actualizado[key_real]
+                break
+            elif hoja_limpia in sinonimos_trote and key_limpia in sinonimos_trote:
                 df_hoja = dict_maestro_actualizado[key_real]
                 break
                 
