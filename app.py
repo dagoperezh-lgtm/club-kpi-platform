@@ -1016,6 +1016,7 @@ def actualizar_maestro_tym(dict_dfs_originales, df_semana_actual, etiqueta_seman
 # absoluto de tablas y el filtro de elegibilidad para TPI.
 # NUEVO: Integración del Velocímetro Global del Equipo en la Portada (Dashboard Dual).
 # NUEVO: Inyección de membretes corporativos en los ENCABEZADOS (Headers) de Word.
+# NUEVO: Motor Narrativo Nivel 2 — diff_hist por disciplina, destino grupal/individual.
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1183,6 +1184,23 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         texto_final = f"Rendiste {val_equipo} {txt_equipo} que el promedio del equipo. Vs Tu Media Histórica: {val_hist} {txt_hist}."
         return texto_final
 
+    # -------------------------------------------------------------------------
+    # NUEVO: HELPER PARA CALCULAR DIFF_HIST POR DISCIPLINA ESPECÍFICA
+    # -------------------------------------------------------------------------
+    def calcular_diff_hist(fila, matchkey, hoja_maestro, col_real):
+        """
+        Calcula la diferencia en minutos entre el valor real de esta semana
+        y la media histórica del atleta para una disciplina específica.
+        Devuelve None si no hay historial previo (primer registro real).
+        """
+        promedio_mins = obtener_media_historica(matchkey, hoja_maestro)
+        
+        # Si el promedio histórico es 0, consideramos que es primer registro
+        if promedio_mins == 0:
+            return None
+            
+        return fila[col_real] - promedio_mins
+
     # =========================================================================
     # 6.1: GENERACIÓN DEL EXCEL MAESTRO ACTUALIZADO
     # =========================================================================
@@ -1305,9 +1323,13 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     doc_grupal.add_paragraph("") 
         
     doc_grupal.add_heading("Comentarios del Grupo de Élite (Completos):", level=2)
+    # PUNTO 3: diff_hist del tiempo total, destino grupal
     for pos, (_, fila) in enumerate(df_top_completos.iterrows(), 1):
-        comentario = generar_comentario(fila, 'CV', pos)
-        doc_grupal.add_paragraph(f"🏅 {fila['Deportista']}: {comentario}")
+        mk = fila['MatchKey']
+        diff = calcular_diff_hist(fila, mk, 'TIEMPO TOTAL', 'T_Mins_Real')
+        comentario = generar_comentario(fila, 'Completos', pos,
+                                        diff_hist_mins=diff, destino='grupal')
+        doc_grupal.add_paragraph(f"🏅 {comentario}")
         
     doc_grupal.add_page_break() 
 
@@ -1345,21 +1367,26 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         
     doc_grupal.add_heading("Comentarios del Podio (Adherencia):", level=2)
     medallas = {1: "🥇", 2: "🥈", 3: "🥉"}
+    # PUNTO 4: diff_hist del tiempo total, destino grupal
     for pos, (_, fila) in enumerate(df_ranking_tpi.head(3).iterrows(), 1):
-        comentario = generar_comentario(fila, 'TPI', pos)
-        doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {fila['Deportista']}: {comentario}")
+        mk = fila['MatchKey']
+        diff = calcular_diff_hist(fila, mk, 'TIEMPO TOTAL', 'T_Mins_Real')
+        comentario = generar_comentario(fila, 'TPI', pos,
+                                        diff_hist_mins=diff, destino='grupal')
+        doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {comentario}")
         
     doc_grupal.add_page_break() 
 
     # --- PÁGINAS 4 a 7: TOP 15 POR TIEMPO Y DISCIPLINAS ---
+    # PUNTO 2: bloques_tops ahora incluye hoja_hist para calcular diff por disciplina
     bloques_tops = [
-        ("⏱️ 5. TOP 15 TIEMPO TOTAL", 'T_Mins_Real', 'General'),
-        ("🏊‍♂️ 6. TOP 15 NATACIÓN", 'N_Mins_Real', 'Natación'),
-        ("🚴‍♂️ 7. TOP 15 CICLISMO", 'B_Mins_Real', 'Bicicleta'),
-        ("🏃‍♂️ 8. TOP 15 TROTE", 'R_Mins_Real', 'Trote')
+        ("⏱️ 5. TOP 15 TIEMPO TOTAL", 'T_Mins_Real', 'General',   'TIEMPO TOTAL'),
+        ("🏊‍♂️ 6. TOP 15 NATACIÓN",   'N_Mins_Real', 'Natación',  'NATACION'),
+        ("🚴‍♂️ 7. TOP 15 CICLISMO",   'B_Mins_Real', 'Bicicleta', 'BICICLETA'),
+        ("🏃‍♂️ 8. TOP 15 TROTE",      'R_Mins_Real', 'Trote',     'TROTE')
     ]
     
-    for titulo, columna, categoria_frase in bloques_tops:
+    for titulo, columna, categoria_frase, hoja_hist in bloques_tops:
         doc_grupal.add_heading(titulo, level=1)
         doc_grupal.add_paragraph("") 
         
@@ -1382,9 +1409,13 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         doc_grupal.add_paragraph("") 
             
         doc_grupal.add_heading(f"Comentarios del Podio ({categoria_frase}):", level=2)
+        # PUNTO 5: diff_hist calculado para la disciplina específica del ranking
         for pos, (_, fila) in enumerate(df_disc.head(3).iterrows(), 1):
-            comentario = generar_comentario(fila, categoria_frase, pos)
-            doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {fila['Deportista']}: {comentario}")
+            mk = fila['MatchKey']
+            diff = calcular_diff_hist(fila, mk, hoja_hist, columna)
+            comentario = generar_comentario(fila, categoria_frase, pos,
+                                            diff_hist_mins=diff, destino='grupal')
+            doc_grupal.add_paragraph(f"{medallas.get(pos, '')} {comentario}")
         
         doc_grupal.add_page_break()
 
@@ -1515,8 +1546,8 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                     ('TROTE', 'R_Mins_Real', 'Trote', 'TROTE')
                 ]
                 
-                for titulo, col_real, llave_equipo, hoja_historia in bloques_analisis:
-                    doc_i.add_heading(titulo, level=2)
+                for titulo_bloque, col_real, llave_equipo, hoja_historia in bloques_analisis:
+                    doc_i.add_heading(titulo_bloque, level=2)
                     p_dato = doc_i.add_paragraph()
                     
                     run_volumen = p_dato.add_run(f"Volumen actual: {to_hhmm_display(row_atleta[col_real])} ")
@@ -1528,14 +1559,36 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                     
                 doc_i.add_paragraph("") 
 
-                # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO) ---
+                # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO NIVEL 2) ---
                 doc_i.add_heading("Evaluación Técnica", level=2)
-                
-                pos = df_ranking_tpi.index[df_ranking_tpi['Deportista'] == row_atleta['Deportista']].tolist()
-                rango_actual = pos[0] + 1 if pos else 99
-                    
-                texto_comentario = generar_comentario(row_atleta, 'General', rango_actual)
-                doc_i.add_paragraph(texto_comentario)
+
+                # PUNTO 6: diff_hist del tiempo total para el comentario general
+                mk = row_atleta['MatchKey']
+                diff_total = calcular_diff_hist(row_atleta, mk, 'TIEMPO TOTAL', 'T_Mins_Real')
+                comentario_general = generar_comentario(
+                    row_atleta, 'General', 1,
+                    diff_hist_mins=diff_total,
+                    destino='individual'
+                )
+                doc_i.add_paragraph(comentario_general)
+
+                # PUNTO 6: Comentario específico por cada disciplina activa
+                # con diff_hist calculado para esa disciplina en particular
+                disc_ficha = [
+                    ('Natación',  'N_Mins_Real', 'NATACION'),
+                    ('Bicicleta', 'B_Mins_Real', 'BICICLETA'),
+                    ('Trote',     'R_Mins_Real', 'TROTE'),
+                ]
+                for nombre_disc, col_disc, hoja_disc in disc_ficha:
+                    if row_atleta[col_disc] > 0:
+                        diff_disc = calcular_diff_hist(
+                            row_atleta, mk, hoja_disc, col_disc)
+                        comentario_disc = generar_comentario(
+                            row_atleta, nombre_disc, 1,
+                            diff_hist_mins=diff_disc,
+                            destino='individual'
+                        )
+                        doc_i.add_paragraph(comentario_disc)
                 
                 doc_i.add_paragraph("\n──────────────────────────────────────────────────")
                 doc_i.add_paragraph("Generado por Plataforma Metri KM - TYM")
@@ -1553,6 +1606,10 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
         'word_grupal': buffer_word_grupal,
         'zip_fichas': buffer_zip_fichas
     }
+
+# =============================================================================
+# FIN DE SECCIÓN 6
+# =============================================================================
     
 # *****************************************************************************
 # SECCIÓN 7: INTERFAZ DE USUARIO, ORQUESTACIÓN Y CONSOLA DE DEBUG
