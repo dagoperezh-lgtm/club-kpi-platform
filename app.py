@@ -253,185 +253,352 @@ def procesar_plan_individual(archivo_plan):
     return df_plan
     
 # *****************************************************************************
-# SECCIÓN 3: MOTOR NARRATIVO PRO CHILE (INTEGRIDAD TOTAL - 90+ FRASES)
+# SECCIÓN 3: MOTOR NARRATIVO PRO CHILE - NIVEL 2 (CONTEXTUAL)
 # *****************************************************************************
-# Este motor dota de inteligencia y variabilidad a los reportes Word.
-# Utiliza un sistema de "pilas" (stacks) para asegurar que en un mismo reporte
-# grupal no se repitan los comentarios entre los distintos deportistas.
 
 import random
 
 PILAS_COMENTARIOS = {}
 
-def obtener_frase_base(categoria, pool_frases):
-    """
-    Sistema anti-repetición. Extrae frases de una pila barajada y la 
-    recarga automáticamente si se agota durante la generación del lote.
-    """
-    global PILAS_COMENTARIOS
-    if categoria not in PILAS_COMENTARIOS or not PILAS_COMENTARIOS[categoria]:
-        # Creamos una copia de la lista para no alterar la original y la barajamos
-        temp_pool = [str(f) for f in pool_frases]
-        random.shuffle(temp_pool)
-        PILAS_COMENTARIOS[categoria] = temp_pool
-    return PILAS_COMENTARIOS[categoria].pop()
+# -----------------------------------------------------------------------------
+# 3.1 CONSTANTES Y CLASIFICADORES
+# -----------------------------------------------------------------------------
 
-def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion):
+UMBRAL_MEJORA = 15
+UMBRAL_BAJA = -15
+ZONA_ROJO = 70
+ZONA_AMARILLO = 90
+
+def clasificar_estado(diff_hist_mins):
+    if diff_hist_mins is None:
+        return 'primer_registro'
+    if diff_hist_mins > UMBRAL_MEJORA:
+        return 'mejora'
+    if diff_hist_mins < UMBRAL_BAJA:
+        return 'baja'
+    return 'estable'
+
+def clasificar_zona_tpi(tpi_valor):
+    if tpi_valor < ZONA_ROJO:
+        return 'rojo'
+    if tpi_valor <= ZONA_AMARILLO:
+        return 'amarillo'
+    return 'verde'
+
+def clasificar_contexto_disciplinas(mins_n, mins_b, mins_r):
+    faltantes = []
+    if mins_n == 0: faltantes.append('natación')
+    if mins_b == 0: faltantes.append('ciclismo')
+    if mins_r == 0: faltantes.append('trote')
+    if not faltantes:
+        return 'completo', []
+    if len(faltantes) == 3:
+        return 'sin_actividad', faltantes
+    return 'incompleto', faltantes
+
+def obtener_frase_base(clave, pool_frases):
+    global PILAS_COMENTARIOS
+    if clave not in PILAS_COMENTARIOS or not PILAS_COMENTARIOS[clave]:
+        temp = [str(f) for f in pool_frases]
+        random.shuffle(temp)
+        PILAS_COMENTARIOS[clave] = temp
+    return PILAS_COMENTARIOS[clave].pop()
+
+# -----------------------------------------------------------------------------
+# 3.2 BANCOS DE FRASES CONTEXTUALES
+# -----------------------------------------------------------------------------
+
+FRASES = {
+
+    # --- ESTADO DEL ATLETA (tono 3ª persona - reporte grupal) ---
+    'estado_mejora_grupal': [
+        "{atleta} llega con más energía que la semana pasada. La diferencia se nota en los números.",
+        "Semana ascendente para {atleta}. Su media histórica quedó atrás y eso es exactamente el objetivo.",
+        "{atleta} entregó más de lo habitual. El cuerpo respondió y el registro lo confirma.",
+        "Evolución concreta de {atleta}. No es opinión, son los minutos acumulados los que hablan.",
+        "La tendencia de {atleta} va hacia arriba. Una semana para recordar en su historial personal.",
+        "Superó su propia media histórica. {atleta} demuestra que el techo siempre puede subir un poco más.",
+        "{atleta} se exigió más que de costumbre y el resultado está a la vista en la tabla.",
+        "Semana destacada. {atleta} rompió su promedio habitual con una carga que merece reconocimiento.",
+    ],
+    'estado_estable_grupal': [
+        "{atleta} mantiene su ritmo habitual. La consistencia también es una forma de progreso.",
+        "Semana dentro de lo esperado para {atleta}. Sostener el nivel no es poca cosa.",
+        "{atleta} en su línea. Sin grandes cambios, pero sin retrocesos. Eso tiene valor.",
+        "Regularidad de {atleta}. El entrenamiento invisible se construye con semanas así.",
+        "{atleta} no sorprende, pero tampoco decepciona. La constancia es su firma.",
+        "Semana estable para {atleta}. El plan se respeta y eso es el primer paso.",
+        "{atleta} en crucero. Volumen similar a su media histórica, lo que refleja un buen control de carga.",
+        "Sin grandes oscilaciones. {atleta} gestiona su semana con madurez deportiva.",
+    ],
+    'estado_baja_grupal': [
+        "{atleta} tuvo una semana más liviana que de costumbre. Puede ser estrategia o puede ser señal.",
+        "El volumen de {atleta} bajó respecto a su media histórica. Una semana para retomar el ritmo.",
+        "Semana de menor carga para {atleta}. El descanso tiene su lugar, pero hay que volver pronto.",
+        "{atleta} registró menos minutos que su promedio. La próxima semana es la oportunidad de revertirlo.",
+        "Baja en el volumen de {atleta}. No es drama, pero sí una señal para revisar la semana.",
+        "{atleta} estuvo por debajo de su media. A veces el cuerpo manda, otras veces manda la agenda.",
+        "Semana corta para {atleta}. El historial personal pide un poco más la próxima vez.",
+        "El registro de {atleta} estuvo bajo su nivel habitual. La constancia se recupera, siempre.",
+    ],
+    'estado_primer_registro_grupal': [
+        "{atleta} estrena su historial en MetriKM. Bienvenido al seguimiento semanal.",
+        "Primera semana registrada para {atleta}. Desde aquí se construye la base de datos personal.",
+        "{atleta} entra al sistema. Este es el punto de partida desde el cual todo se mide.",
+        "Debut en el registro semanal. {atleta} comienza a escribir su historial deportivo en el club.",
+        "Primera huella de {atleta} en el Maestro. Ahora sí hay datos con qué comparar las próximas semanas.",
+    ],
+
+    # --- ESTADO DEL ATLETA (tono 2ª persona - ficha individual) ---
+    'estado_mejora_individual': [
+        "Esta semana superaste tu propia media histórica. Eso no pasa solo, es el resultado del trabajo.",
+        "Tus números de esta semana están por encima de tu promedio habitual. Sigue en esa dirección.",
+        "Rompiste tu media histórica. Pequeño salto, gran señal de progresión.",
+        "Mejor semana que tu promedio. El esfuerzo se tradujo directamente en los registros.",
+        "Esta semana entrenaste más de lo que acostumbras. Tu historial personal te lo va a agradecer.",
+        "Superaste tu línea base personal. Así se construye la progresión semana a semana.",
+    ],
+    'estado_estable_individual': [
+        "Semana dentro de tu rango habitual. Mantener el nivel también es avanzar.",
+        "Tus números están alineados con tu media histórica. Consistencia que se nota.",
+        "Sin grandes cambios respecto a tus semanas anteriores. La regularidad es tu mejor aliada.",
+        "Estuviste en tu zona de confort de volumen. A veces consolidar es lo correcto.",
+        "Semana estable. Tu historial muestra que este es tu ritmo base, y eso tiene valor.",
+        "Dentro de tu media histórica. El cuerpo y el plan estuvieron sincronizados esta semana.",
+    ],
+    'estado_baja_individual': [
+        "Esta semana entrenaste menos que tu promedio habitual. La próxima es la oportunidad de retomar.",
+        "Tus minutos bajaron respecto a tu media histórica. ¿Semana complicada o descanso planificado?",
+        "Registro por debajo de tu línea base. No es para alarmarse, pero sí para retomar el ritmo pronto.",
+        "Volumen más bajo que de costumbre. Tu historial pide un poco más la próxima semana.",
+        "Estuviste bajo tu media personal. El cuerpo a veces necesita bajar, pero hay que volver.",
+        "Semana liviana comparada con tu historial. La consistencia se recupera, una semana a la vez.",
+    ],
+    'estado_primer_registro_individual': [
+        "Esta es tu primera semana registrada en MetriKM. Desde aquí se construye todo.",
+        "Bienvenido al seguimiento semanal. Este registro es el punto de partida de tu historial personal.",
+        "Primera semana en el sistema. La próxima ya tendrás con qué compararte.",
+        "Debut en el Maestro. A partir de ahora cada semana suma a tu base de datos personal.",
+    ],
+
+    # --- ZONA TPI (tono grupal) ---
+    'tpi_rojo_grupal': [
+        "El plan existía. Los minutos, menos. {atleta} tiene una conversación pendiente con su agenda.",
+        "Adherencia baja para {atleta} esta semana. El plan es una intención, el registro es la realidad.",
+        "{atleta} cumplió una parte del plan. La otra parte queda pendiente para la próxima semana.",
+        "TPI en zona roja para {atleta}. No es el fin del mundo, pero sí una señal clara.",
+        "El plan de {atleta} y su semana real tuvieron poco contacto. Hay margen de mejora evidente.",
+        "Cumplimiento bajo esta semana para {atleta}. La planificación vale lo que se ejecuta.",
+    ],
+    'tpi_amarillo_grupal': [
+        "{atleta} cumplió una buena parte del plan. Faltó poco para llegar a la zona verde.",
+        "Adherencia razonable de {atleta}. El trabajo estuvo, aunque no al 100% de lo planificado.",
+        "{atleta} en zona amarilla. Bien encaminado, con espacio para ajustar la próxima semana.",
+        "Cerca del objetivo de cumplimiento. {atleta} tiene el motor encendido, le falta un poco de bencina.",
+        "Semana de buena adherencia para {atleta}, sin ser perfecta. Eso también es parte del proceso.",
+        "{atleta} rozó la zona verde. Un pequeño ajuste la próxima semana puede marcar la diferencia.",
+    ],
+    'tpi_verde_grupal': [
+        "{atleta} ejecutó el plan con precisión. Eso no es suerte, es disciplina.",
+        "Zona verde de adherencia para {atleta}. El plan se respetó y los números lo demuestran.",
+        "Cumplimiento ejemplar de {atleta}. Cuando el plan y la ejecución coinciden, el progreso es inevitable.",
+        "{atleta} clavó el plan esta semana. Referente de adherencia para el club.",
+        "TPI en verde para {atleta}. Planificó bien y ejecutó mejor. Así se hace.",
+        "Adherencia total de {atleta}. El equipo técnico tiene poco que corregir esta semana.",
+    ],
+
+    # --- ZONA TPI (tono individual) ---
+    'tpi_rojo_individual': [
+        "Tu adherencia al plan estuvo baja esta semana. El plan es una hoja de ruta, no una sugerencia.",
+        "TPI en zona roja. Hubo una brecha importante entre lo planificado y lo ejecutado.",
+        "Esta semana el plan y tu semana real no se encontraron mucho. La próxima es la oportunidad.",
+        "Cumplimiento bajo. ¿Qué pasó esta semana? Vale la pena revisarlo antes de la siguiente.",
+        "Tu adherencia necesita atención. El plan existe por una razón, y esta semana quedó corto.",
+    ],
+    'tpi_amarillo_individual': [
+        "Buena adherencia, aunque con espacio para mejorar. Estuviste cerca de la zona verde.",
+        "Tu TPI está en amarillo. El esfuerzo estuvo, faltó un poco más para cerrar el plan completo.",
+        "Cerca del objetivo de cumplimiento. Un ajuste pequeño la próxima semana puede llevarte al verde.",
+        "Adherencia razonable. El plan se respetó en buena parte, pero hay margen de mejora.",
+        "Zona amarilla de TPI. Bien encaminado, sin llegar al tope. La próxima semana tienes el dato.",
+    ],
+    'tpi_verde_individual': [
+        "Adherencia en zona verde. Planificaste bien y ejecutaste mejor. Eso es lo que construye progreso.",
+        "TPI en verde. Esta semana el plan y tu ejecución estuvieron perfectamente alineados.",
+        "Cumplimiento ejemplar. Pocas cosas son más valiosas en el entrenamiento que respetar el plan.",
+        "Zona verde de adherencia. El equipo técnico no tiene mucho que corregirte esta semana.",
+        "Ejecutaste el plan con precisión. Eso no es casualidad, es disciplina sostenida.",
+    ],
+
+    # --- CONTEXTO DISCIPLINAS (grupal) ---
+    'completo_grupal': [
+        "{atleta} tocó el agua, los pedales y el asfalto. Triatleta completo en toda la extensión de la palabra.",
+        "Las tres disciplinas registradas para {atleta}. Eso es lo que diferencia a un triatleta de un deportista de una sola disciplina.",
+        "{atleta} no dejó ningún frente abandonado esta semana. Natación, ciclismo y trote, todos presentes.",
+        "Semana completa para {atleta}. Tres disciplinas, tres registros, cero excusas.",
+        "{atleta} cumplió el requisito fundamental: las tres disciplinas activas. El resto son detalles.",
+    ],
+    'completo_individual': [
+        "Tres disciplinas registradas. Eso es exactamente lo que define a un triatleta.",
+        "Natación, ciclismo y trote en tu registro semanal. Semana completa en toda regla.",
+        "Las tres disciplinas activas esta semana. Sin atajos, sin disciplinas olvidadas.",
+        "Tocaste el agua, los pedales y el asfalto. Semana de triatleta completo.",
+        "Tres de tres. Así se construye la base para competir en las tres disciplinas.",
+    ],
+    'incompleto_grupal': [
+        "{atleta} dejó {faltantes} fuera del registro esta semana. El triatlón tiene tres partes, no dos.",
+        "Faltó {faltantes} en la semana de {atleta}. Una disciplina ausente es una debilidad que se acumula.",
+        "{atleta} entrenó bien, pero {faltantes} quedó en el tintero. La próxima semana, que no falte.",
+        "Semana incompleta para {atleta}. {faltantes} no aparece en el registro y eso tiene un costo.",
+        "{atleta} y {faltantes} no se vieron esta semana. Habrá que reencontrarse pronto.",
+    ],
+    'incompleto_individual': [
+        "Esta semana te faltó {faltantes}. El triatlón no perdona las disciplinas abandonadas.",
+        "Faltó {faltantes} en tu registro. Una semana sin esa disciplina es una semana de ventaja para quienes sí la hicieron.",
+        "Tu registro quedó incompleto: {faltantes} no aparece esta semana. Ojo con eso.",
+        "Sin {faltantes} esta semana. La próxima, que no falte ninguna disciplina.",
+        "{faltantes} ausente en tu semana. Recuerda que el triatlón cobra las tres disciplinas el día de la carrera.",
+    ],
+    'sin_actividad_grupal': [
+        "{atleta} no registró actividad esta semana. Descanso, viaje o contratiempo, la próxima semana cuenta.",
+        "Semana en blanco para {atleta}. El cuerpo a veces necesita parar, pero el plan no espera.",
+        "{atleta} no apareció en el registro esta semana. Esperamos verlo de vuelta pronto.",
+    ],
+    'sin_actividad_individual': [
+        "Sin actividad registrada esta semana. La próxima semana es la oportunidad de retomar.",
+        "No hubo registro esta semana. Pase lo que haya pasado, la siguiente semana empieza desde cero.",
+        "Semana en blanco en tu historial. El plan sigue esperando, sin juzgar.",
+    ],
+
+    # --- DISCIPLINAS ESPECÍFICAS (grupal) ---
+    'natacion_grupal': [
+        "{atleta} sumó {tiempo} en la piscina. El agua no miente y este registro lo confirma.",
+        "Volumen de natación sólido para {atleta}: {tiempo}. La base acuática se construye con semanas así.",
+        "{atleta} y la piscina tuvieron una buena semana juntos: {tiempo} de trabajo acuático.",
+        "{tiempo} de natación para {atleta}. Cada largo suma a la base aeróbica que se necesita en carrera.",
+        "Registro acuático de {atleta}: {tiempo}. La piscina es donde se gana el tiempo en el segmento más técnico.",
+        "{atleta} acumuló {tiempo} en el agua. Eso es fondo, técnica y resistencia en un solo número.",
+    ],
+    'ciclismo_grupal': [
+        "{atleta} puso {tiempo} sobre los pedales esta semana. El segmento más largo del triatlón bien cubierto.",
+        "{tiempo} de ciclismo para {atleta}. Las piernas tienen memoria y este volumen les habla.",
+        "{atleta} y la bicicleta: {tiempo} juntos esta semana. El motor aeróbico agradece cada pedalada.",
+        "Rodaje de {tiempo} para {atleta}. En ciclismo, el volumen es la base de todo lo demás.",
+        "{atleta} acumuló {tiempo} en bicicleta. Eso es inversión directa en el segmento más largo de la carrera.",
+        "{tiempo} de pedaleo para {atleta}. Las watts no se improvisan, se construyen semana a semana.",
+    ],
+    'trote_grupal': [
+        "{atleta} cerró con {tiempo} de trote. La carrera a pie es donde se define el triatlón y este volumen lo sabe.",
+        "{tiempo} de running para {atleta}. El asfalto tiene sus propias reglas y {atleta} las respeta.",
+        "{atleta} sumó {tiempo} de trote esta semana. Las piernas cansadas de la bici necesitan este trabajo.",
+        "Registro de carrera a pie de {atleta}: {tiempo}. El último segmento se gana entrenando este volumen.",
+        "{tiempo} de zancada para {atleta}. El trote es donde muchos triatletas pierden o ganan la carrera.",
+        "{atleta} y el asfalto: {tiempo} esta semana. Consistencia en running es consistencia en resultados.",
+    ],
+    'natacion_individual': [
+        "Sumaste {tiempo} en la piscina. El agua es el segmento más técnico y este volumen construye base.",
+        "{tiempo} de natación en tu registro. Cada sesión en el agua mejora algo que no se ve en la bici ni en el trote.",
+        "Tu volumen acuático esta semana: {tiempo}. La piscina te devuelve lo que le das, sin excepciones.",
+        "{tiempo} en el agua. Eso es técnica, resistencia y confianza para el segmento de apertura.",
+        "Natación: {tiempo} esta semana. El primer segmento del triatlón se gana aquí, en el entrenamiento.",
+    ],
+    'ciclismo_individual': [
+        "{tiempo} sobre los pedales esta semana. El segmento más largo del triatlón bien trabajado.",
+        "Tu volumen de ciclismo: {tiempo}. Las piernas tienen memoria y este trabajo suma.",
+        "{tiempo} de rodaje en tu registro. La bicicleta es donde se construye el motor aeróbico.",
+        "Ciclismo: {tiempo} esta semana. Ese volumen se traduce directamente en capacidad para el resto del recorrido.",
+        "{tiempo} de pedaleo. En el triatlón, la bici es el segmento que más tiempo consume y más base requiere.",
+    ],
+    'trote_individual': [
+        "{tiempo} de trote en tu registro. La carrera a pie es donde el triatlón se decide.",
+        "Tu volumen de running esta semana: {tiempo}. Las piernas cansadas de la bici necesitan este trabajo.",
+        "{tiempo} de zancada. El último segmento se entrena así, semana a semana.",
+        "Trote: {tiempo} esta semana. El asfalto tiene sus propias reglas y este volumen las respeta.",
+        "{tiempo} de carrera a pie. Aquí es donde muchos triatlones se ganan o se pierden.",
+    ],
+}
+
+# -----------------------------------------------------------------------------
+# 3.3 FUNCIÓN PRINCIPAL DE GENERACIÓN DE COMENTARIOS
+# -----------------------------------------------------------------------------
+
+def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion,
+                       diff_hist_mins=None, destino='grupal'):
     """
-    Inyecta los datos reales del deportista (Nombre y Tiempo) en las 
-    plantillas narrativas según la disciplina evaluada.
-    Incluye lógica de podio para no llamar "líder" al segundo o tercer lugar.
+    Motor contextual Nivel 2.
+    Genera comentarios según estado del atleta, zona TPI, 
+    contexto de disciplinas y destino del reporte.
     """
     atleta = str(datos_de_fila.get('Deportista', 'Atleta TYM'))
-    
-    # Dependiendo de la categoría, extraemos el tiempo formateado en HH:MM
+    tpi_global = datos_de_fila.get('TPI_Global', 0)
+    mins_n = datos_de_fila.get('N_Mins_Real', 0)
+    mins_b = datos_de_fila.get('B_Mins_Real', 0)
+    mins_r = datos_de_fila.get('R_Mins_Real', 0)
+
+    # Tiempo formateado según disciplina
     if nombre_categoria == 'Natación':
-        tiempo = to_hhmm_display(datos_de_fila.get('N_Mins_Real', 0))
+        tiempo = to_hhmm_display(mins_n)
     elif nombre_categoria == 'Bicicleta':
-        tiempo = to_hhmm_display(datos_de_fila.get('B_Mins_Real', 0))
+        tiempo = to_hhmm_display(mins_b)
     elif nombre_categoria == 'Trote':
-        tiempo = to_hhmm_display(datos_de_fila.get('R_Mins_Real', 0))
+        tiempo = to_hhmm_display(mins_r)
     else:
         tiempo = to_hhmm_display(datos_de_fila.get('T_Mins_Real', 0))
-    
-    # BANCO DE FRASES EXTENDIDO (VERSIÓN ABSOLUTA SIN OMISIONES + TPI)
-    pools = {
-        'General': [
-            "La disciplina de {atleta} es el motor del club; liderar con este volumen es pura entrega.",
-            "Semana de consolidación para {atleta}. No solo es cantidad, es la calidad del tiempo acumulado.",
-            "El compromiso de {atleta} se refleja en cada sesión. Un pilar fundamental del ranking hoy.",
-            "Rendimiento de alto nivel. {atleta} entiende que la base del éxito es este volumen sostenido.",
-            "Impresionante despliegue de {atleta}. Gestionar estas cargas requiere madurez deportiva.",
-            "La constancia de {atleta} marca el paso del equipo. Una semana de trabajo impecable.",
-            "Fuerza mental y física. {atleta} asimila el volumen semanal con una resiliencia notable.",
-            "Evolución sostenida de {atleta}. Estar en el top general es fruto de una planificación seria.",
-            "La ética de trabajo de {atleta} es envidiable. Cada hora sumada construye su mejor versión.",
-            "Control total de la fatiga. {atleta} cierra la semana en lo más alto con mérito propio.",
-            "{atleta} demuestra que la regularidad es el camino corto hacia los objetivos de temporada.",
-            "Capacidad de carga superior. {atleta} lidera la tabla con una solvencia técnica admirable.",
-            "Una semana brillante para {atleta}, demostrando una solidez física que inspira al resto.",
-            "Disciplina inquebrantable. {atleta} se mantiene en la cima con un enfoque envidiable.",
-            "{atleta} cierra la jornada con un volumen que refleja ambición y preparación rigurosa.",
-            "Poderío aeróbico de {atleta}. Registrar estas horas es señal de una base muy robusta.",
-            "Planificación ejecutada a la perfección por {atleta}. La consistencia es su mayor virtud.",
-            "Rendimiento de punta. {atleta} encabeza el grupo con una capacidad de recuperación única.",
-            "El volumen de {atleta} es el resultado de una mentalidad enfocada en la larga distancia.",
-            "Foco y determinación. {atleta} asume el liderato semanal con una carga de trabajo sólida.",
-            "Notable fondo físico de {atleta}. Su presencia en el podio general es garantía de perseverancia.",
-            "{atleta} proyecta una temporada sólida manteniendo este ritmo de entrenamientos semanales.",
-            "Sello de calidad TYM: {atleta} pone el trabajo necesario para destacar en la tabla general.",
-            "Madurez competitiva. {atleta} sabe que el volumen es el cimiento de su rendimiento futuro.",
-            "Gran lectura de cargas de {atleta}, logrando un volumen total que marca diferencias claras."
-        ],
-        'TPI': [
-            "Ejecución impecable del plan. {atleta} demuestra una disciplina táctica de alto nivel.",
-            "El entrenamiento invisible se hace visible aquí. Cumplimiento perfecto de las metas para {atleta}.",
-            "Adherencia total. {atleta} respeta la planificación al pie de la letra y maximiza sus cargas.",
-            "No es solo entrenar duro, es entrenar inteligente. {atleta} clava los porcentajes del plan.",
-            "Respeto absoluto por las sesiones asignadas. {atleta} es un reloj suizo esta semana.",
-            "La constancia vence al talento. {atleta} cierra con un nivel de cumplimiento envidiable.",
-            "Planificación asimilada al máximo. {atleta} demuestra madurez para seguir las instrucciones técnicas.",
-            "Disciplina inquebrantable. El TPI de {atleta} refleja un compromiso total con su propio proceso.",
-            "Gestión perfecta de la agenda deportiva. {atleta} marca el estándar de adherencia del club.",
-            "Cero excusas, puro cumplimiento. {atleta} se ajusta a la meta semanal con precisión quirúrgica.",
-            "La estrategia da frutos cuando se respeta. {atleta} consolida su semana cumpliendo a cabalidad."
-        ],
-        'CV': [
-            "Equilibrio milimétrico. {atleta} entrena con la precisión de quien no deja nada al azar.",
-            "La polivalencia de {atleta} es su mayor ventaja. Simetría total en las tres áreas.",
-            "Control de carga magistral. {atleta} distribuye su energía de forma balanceada.",
-            "Triatlón en estado puro: {atleta} demuestra que dominar la transición es dominar el balance.",
-            "Eficiencia técnica destacada. {atleta} logra que la simetría parezca sencilla pero es pura gestión.",
-            "Versatilidad técnica. {atleta} no descuida ningún frente, fortaleciendo sus debilidades.",
-            "Arquitectura de entrenamiento impecable. {atleta} refleja la esencia del deportista integral.",
-            "Cero puntos débiles. {atleta} mantiene una paridad envidiable entre agua, bici y trote.",
-            "Gestión inteligente de las cargas. {atleta} prioriza la salud y el equilibrio deportivo.",
-            "Sincronía total. {atleta} asimila las tres disciplinas con una regularidad asombrosa.",
-            "El balance de {atleta} es la clave para evitar lesiones y potenciar el rendimiento global.",
-            "{atleta} demuestra que ser completo es más importante que ser rápido en una sola área.",
-            "Madurez deportiva de {atleta}. Su coeficiente de variación es de los mejores del club.",
-            "Planificación equilibrada de {atleta}. Cada disciplina recibe la atención que merece.",
-            "Solidez transversal. {atleta} se consolida como uno de los atletas más balanceados.",
-            "Precisión técnica en la distribución. {atleta} entrena con inteligencia y visión global.",
-            "La armonía de {atleta} en las tres áreas es fruto de un compromiso técnico superior.",
-            "{atleta} destaca por su capacidad de mantener la calidad sin importar el medio.",
-            "Consistencia simétrica. {atleta} es el referente de equilibrio para el equipo hoy.",
-            "Desarrollo armónico. {atleta} fortalece su base con una distribución de tiempo magistral."
-        ],
-        'Natación': [
-            "Fluidez y potencia. Los {tiempo} de {atleta} en la piscina son el cimiento de su base.",
-            "Dominio acuático. {atleta} marca la pauta con un volumen técnico de {tiempo} en piscina.",
-            "Calidad en el agua. {atleta} suma {tiempo} de nado con una técnica cada vez más depurada.",
-            "{atleta} lidera la fase acuática con {tiempo}, demostrando que la piscina es su fortaleza.",
-            "Brazada eficiente y constante. {atleta} asimila {tiempo} de natación con gran solvencia.",
-            "Resistencia hidrodinámica de {atleta}. Registrar {tiempo} en piscina es un hito importante.",
-            "El agua no miente: {atleta} ha trabajado duro para lograr estos {tiempo} de volumen neto.",
-            "Foco técnico en natación. {atleta} cierra con {tiempo}, consolidando su fase de apertura.",
-            "Disciplina en la piscina. {atleta} no falla y suma {tiempo} de alta relevancia técnica.",
-            "Progreso acuático visible. {atleta} domina su carril con {tiempo} de trabajo serio.",
-            "{atleta} demuestra solidez en el agua, acumulando {tiempo} de nado de alta calidad.",
-            "Eficiencia en cada largo. {atleta} optimiza sus {tiempo} en piscina para mejorar su fondo.",
-            "Control de ritmo acuático. {atleta} suma {tiempo} de natación con una técnica sólida.",
-            "Fuerza en la piscina. {atleta} proyecta una gran base aeróbica con sus {tiempo} actuales.",
-            "Consistencia en el agua. {atleta} aprovecha sus {tiempo} en piscina para pulir detalles."
-        ],
-        'Bicicleta': [
-            "Kilometraje de calidad. {atleta} construye su fortaleza sobre los pedales con {tiempo} de rodaje.",
-            "El gran motor del equipo. {atleta} asimila la carga de ciclismo con resiliencia envidiable.",
-            "Potencia y fondo. {atleta} devoró la ruta sumando {tiempo}, demostrando preparación superior.",
-            "Solidez sobre ruedas. {atleta} aprovecha cada sesión para sumar {tiempo} de base aeróbica.",
-            "El asfalto es el hábitat de {atleta}. Su volumen de {tiempo} en bici es pilar de su plan.",
-            "Resistencia sobre el pedal. {atleta} acumula {tiempo} de calidad para blindar sus piernas.",
-            "Ciclismo de alto impacto. {atleta} se sitúa como líder con {tiempo} de rodaje neto.",
-            "Fuerza y cadencia. {atleta} gestiona sus {tiempo} en bicicleta con una madurez notable.",
-            "Fondo inquebrantable. {atleta} suma {tiempo} en la ruta, clave para la larga distancia.",
-            "Dominio del segmento de ciclismo. {atleta} marca el ritmo con {tiempo} de trabajo duro.",
-            "Potencia aeróbica en ruta. {atleta} consolida sus {tiempo} de pedaleo con determinación.",
-            "{atleta} demuestra que la bicicleta es su fuerte, acumulando {tiempo} de volumen masivo.",
-            "Resiliencia sobre el sillín. {atleta} asimila {tiempo} de ciclismo con una solvencia técnica única.",
-            "Gestión de potencia de {atleta}. Sus {tiempo} de rodaje son fundamentales para la temporada.",
-            "Control y resistencia. {atleta} suma {tiempo} de bicicleta, blindando su motor aeróbico."
-        ],
-        'Trote': [
-            "Zancada resiliente. Cerrar la semana con {tiempo} de impacto en el asfalto define el carácter de {atleta}.",
-            "Resistencia específica. {atleta} domina la fase de carrera con una gestión de fatiga admirable.",
-            "Persistencia técnica. {atleta} asimila el volumen de {tiempo} en running fortaleciendo su base.",
-            "El asfalto premia la constancia. {atleta} cierra con {tiempo} de trote muy sólidos.",
-            "Capacidad de cierre. {atleta} demuestra su fondo aeróbico con {tiempo} de carrera a pie.",
-            "Impacto controlado y eficiente. {atleta} suma {tiempo} de trote, clave para su evolución.",
-            "Running de alta gama. {atleta} se posiciona en el top con {tiempo} de asimilación de carga.",
-            "Fortaleza en la carrera. {atleta} no cede y registra {tiempo} de volumen neto en el asfalto.",
-            "Zancada potente y rítmica. {atleta} asume sus {tiempo} de trote con una técnica ejemplar.",
-            "Resiliencia en cada kilómetro. {atleta} demuestra que el trote es donde se ganan las carreras.",
-            "Gestión de la fatiga en asfalto. {atleta} completa sus {tiempo} de trote con gran madurez.",
-            "Fuerza mental en la carrera. {atleta} suma {tiempo} netos, esenciales para su progresión.",
-            "Eficiencia de zancada. {atleta} asimila {tiempo} de trote, cuidando la técnica en cada tramo.",
-            "Consistencia en el running. {atleta} cierra la semana con {tiempo} de carga aeróbica sólida.",
-            "Resistencia de punta. {atleta} marca diferencias en el asfalto con sus {tiempo} de volumen."
-        ]
-    }
 
-    # Determinamos la llave de la categoría (Fallback a 'General' si el nombre no cuadra exacto)
-    cat_key = 'TPI' if nombre_categoria == 'TPI' else ('General' if nombre_categoria in ['Completos', 'General'] else nombre_categoria)
-    
-    # Extraemos la plantilla aleatoria
-    frase_plantilla = str(obtener_frase_base(cat_key, pools.get(cat_key, pools['General'])))
-    
-    # Inyectamos los datos del deportista
-    comentario_final = frase_plantilla.replace("{atleta}", atleta).replace("{tiempo}", tiempo)
-    
-    # LÓGICA DE PODIO: Filtrado estricto de palabras exclusivas para el 1° Lugar
-    if rank_posicion > 1:
-        comentario_final = comentario_final.replace("liderar", "destacar").replace("lidera", "destaca en")\
-            .replace("líder", "referente").replace("en lo más alto", "en el podio")\
-            .replace("en el top", "en el podio").replace("en la cima", "entre los mejores")\
-            .replace("encabeza", "brilla en")
-            
-    # Bonus de liderazgo: Si es el número 1 del ranking, añadimos un reconocimiento extra
-    if rank_posicion == 1 and cat_key in ['General', 'TPI']:
-        comentario_final = f"🏆 {comentario_final.replace(atleta, f'nuestro líder {atleta}')}"
-        
-    return comentario_final
+    # Clasificadores
+    estado = clasificar_estado(diff_hist_mins)
+    zona = clasificar_zona_tpi(tpi_global)
+    contexto_disc, faltantes = clasificar_contexto_disciplinas(mins_n, mins_b, mins_r)
+    faltantes_str = ' y '.join(faltantes) if faltantes else ''
+
+    comentarios = []
+
+    # --- BLOQUE 1: ESTADO DEL ATLETA ---
+    clave_estado = f'estado_{estado}_{destino}'
+    pool_estado = FRASES.get(clave_estado, FRASES.get(f'estado_{estado}_grupal', []))
+    if pool_estado:
+        frase = obtener_frase_base(clave_estado, pool_estado)
+        comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
+
+    # --- BLOQUE 2: ZONA TPI ---
+    clave_tpi = f'tpi_{zona}_{destino}'
+    pool_tpi = FRASES.get(clave_tpi, FRASES.get(f'tpi_{zona}_grupal', []))
+    if pool_tpi:
+        frase = obtener_frase_base(clave_tpi, pool_tpi)
+        comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
+
+    # --- BLOQUE 3: CONTEXTO DISCIPLINAS ---
+    clave_disc = f'{contexto_disc}_{destino}'
+    pool_disc = FRASES.get(clave_disc, FRASES.get(f'{contexto_disc}_grupal', []))
+    if pool_disc:
+        frase = obtener_frase_base(clave_disc, pool_disc)
+        comentarios.append(
+            frase.replace('{atleta}', atleta)
+                 .replace('{tiempo}', tiempo)
+                 .replace('{faltantes}', faltantes_str)
+        )
+
+    # --- BLOQUE 4: DISCIPLINA ESPECÍFICA (si aplica) ---
+    mapa_disc = {
+        'Natación': f'natacion_{destino}',
+        'Bicicleta': f'ciclismo_{destino}',
+        'Trote': f'trote_{destino}'
+    }
+    if nombre_categoria in mapa_disc:
+        clave_especifica = mapa_disc[nombre_categoria]
+        pool_esp = FRASES.get(clave_especifica, [])
+        if pool_esp:
+            frase = obtener_frase_base(clave_especifica, pool_esp)
+            comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
+
+    # Unir los bloques en un párrafo coherente
+    comentario_final = ' '.join(comentarios)
+
+    # Bonus de liderazgo para el 1° lugar
+    if rank_posicion == 1 and destino == 'grupal':
+        comentario_final = f"🏆 {comentario_final}"
+
+    return comentario_final if comentario_final.strip() else f"{atleta} registró actividad esta semana."
     
 # *****************************************************************************
 # SECCIÓN 4: MOTOR DE CÁLCULO DE ADHERENCIA (TPI - REGLA 4.3)
