@@ -306,53 +306,62 @@ def obtener_frase_base(clave, pool_frases):
 
 # -----------------------------------------------------------------------------
 # 3.2 BANCOS DE FRASES CONTEXTUALES
+# REGLA DE ORO:
+# - Frases de ESTADO grupal: todas inician con {atleta}
+# - Frases de TPI grupal: sin {atleta}, usan "su" o impersonal
+# - Frases de DISCIPLINAS grupal: sin {atleta}, usan impersonal
+# - Frases individuales: segunda persona, sin {atleta}
 # -----------------------------------------------------------------------------
 
 FRASES = {
 
-    # --- ESTADO DEL ATLETA (tono 3ª persona - reporte grupal) ---
+    # -------------------------------------------------------------------------
+    # ESTADO — grupal (TODAS inician con {atleta})
+    # -------------------------------------------------------------------------
     'estado_mejora_grupal': [
-        "{atleta} llega con más energía que la semana pasada. La diferencia se nota en los números.",
-        "Semana ascendente para {atleta}. Su media histórica quedó atrás y eso es exactamente el objetivo.",
+        "{atleta} superó su propia media histórica esta semana. La diferencia se nota en los números.",
+        "{atleta} llegó con más energía que de costumbre. El trabajo acumulado está dando frutos.",
         "{atleta} entregó más de lo habitual. El cuerpo respondió y el registro lo confirma.",
-        "Evolución concreta de {atleta}. No es opinión, son los minutos acumulados los que hablan.",
-        "La tendencia de {atleta} va hacia arriba. Una semana para recordar en su historial personal.",
-        "Superó su propia media histórica. {atleta} demuestra que el techo siempre puede subir un poco más.",
+        "{atleta} rompió su promedio habitual con una carga que merece reconocimiento.",
+        "{atleta} está en tendencia ascendente. Una semana para recordar en su historial personal.",
         "{atleta} se exigió más que de costumbre y el resultado está a la vista en la tabla.",
-        "Semana destacada. {atleta} rompió su promedio habitual con una carga que merece reconocimiento.",
+        "{atleta} evolucionó de forma concreta esta semana. Los minutos acumulados no mienten.",
+        "{atleta} demostró que el techo siempre puede subir. Su media histórica quedó atrás.",
     ],
     'estado_estable_grupal': [
-        "{atleta} mantiene su ritmo habitual. La consistencia también es una forma de progreso.",
-        "Semana dentro de lo esperado para {atleta}. Sostener el nivel no es poca cosa.",
-        "{atleta} en su línea. Sin grandes cambios, pero sin retrocesos. Eso tiene valor.",
-        "Regularidad de {atleta}. El entrenamiento invisible se construye con semanas así.",
+        "{atleta} mantuvo su ritmo habitual. La consistencia también es una forma de progreso.",
+        "{atleta} estuvo dentro de lo esperado esta semana. Sostener el nivel no es poca cosa.",
+        "{atleta} en su línea habitual. Sin grandes cambios, pero sin retrocesos.",
+        "{atleta} gestionó la semana con regularidad. El entrenamiento invisible se construye así.",
         "{atleta} no sorprende, pero tampoco decepciona. La constancia es su firma.",
-        "Semana estable para {atleta}. El plan se respeta y eso es el primer paso.",
-        "{atleta} en crucero. Volumen similar a su media histórica, lo que refleja un buen control de carga.",
-        "Sin grandes oscilaciones. {atleta} gestiona su semana con madurez deportiva.",
+        "{atleta} en crucero esta semana. Volumen similar a su media histórica, buen control de carga.",
+        "{atleta} mostró madurez deportiva. Sin grandes oscilaciones, plan respetado.",
+        "{atleta} consolidó su semana sin altibajos. A veces consolidar es lo correcto.",
     ],
     'estado_baja_grupal': [
         "{atleta} tuvo una semana más liviana que de costumbre. Puede ser estrategia o puede ser señal.",
-        "El volumen de {atleta} bajó respecto a su media histórica. Una semana para retomar el ritmo.",
-        "Semana de menor carga para {atleta}. El descanso tiene su lugar, pero hay que volver pronto.",
-        "{atleta} registró menos minutos que su promedio. La próxima semana es la oportunidad de revertirlo.",
-        "Baja en el volumen de {atleta}. No es drama, pero sí una señal para revisar la semana.",
-        "{atleta} estuvo por debajo de su media. A veces el cuerpo manda, otras veces manda la agenda.",
-        "Semana corta para {atleta}. El historial personal pide un poco más la próxima vez.",
-        "El registro de {atleta} estuvo bajo su nivel habitual. La constancia se recupera, siempre.",
+        "{atleta} bajó respecto a su media histórica. Una semana para retomar el ritmo.",
+        "{atleta} registró menos minutos que su promedio. La próxima semana es la oportunidad.",
+        "{atleta} estuvo por debajo de su nivel habitual. No es drama, pero sí una señal.",
+        "{atleta} tuvo una semana corta. El historial personal pide un poco más la próxima vez.",
+        "{atleta} no llegó a su media esta semana. A veces el cuerpo manda, otras veces manda la agenda.",
+        "{atleta} bajó el volumen respecto a semanas anteriores. La constancia se recupera, siempre.",
+        "{atleta} estuvo bajo su línea base. El registro pide una respuesta la próxima semana.",
     ],
     'estado_primer_registro_grupal': [
         "{atleta} estrena su historial en MetriKM. Bienvenido al seguimiento semanal.",
-        "Primera semana registrada para {atleta}. Desde aquí se construye la base de datos personal.",
-        "{atleta} entra al sistema. Este es el punto de partida desde el cual todo se mide.",
-        "Debut en el registro semanal. {atleta} comienza a escribir su historial deportivo en el club.",
-        "Primera huella de {atleta} en el Maestro. Ahora sí hay datos con qué comparar las próximas semanas.",
+        "{atleta} entra al sistema esta semana. Este es el punto de partida desde el cual todo se mide.",
+        "{atleta} debuta en el registro semanal. Desde aquí se construye la base de datos personal.",
+        "{atleta} deja su primera huella en el Maestro. La próxima semana ya hay con qué comparar.",
+        "{atleta} aparece por primera vez en la tabla. Todo historial empieza con una primera semana.",
     ],
 
-    # --- ESTADO DEL ATLETA (tono 2ª persona - ficha individual) ---
+    # -------------------------------------------------------------------------
+    # ESTADO — individual (segunda persona, sin {atleta})
+    # -------------------------------------------------------------------------
     'estado_mejora_individual': [
         "Esta semana superaste tu propia media histórica. Eso no pasa solo, es el resultado del trabajo.",
-        "Tus números de esta semana están por encima de tu promedio habitual. Sigue en esa dirección.",
+        "Tus números están por encima de tu promedio habitual. Sigue en esa dirección.",
         "Rompiste tu media histórica. Pequeño salto, gran señal de progresión.",
         "Mejor semana que tu promedio. El esfuerzo se tradujo directamente en los registros.",
         "Esta semana entrenaste más de lo que acostumbras. Tu historial personal te lo va a agradecer.",
@@ -381,37 +390,41 @@ FRASES = {
         "Debut en el Maestro. A partir de ahora cada semana suma a tu base de datos personal.",
     ],
 
-    # --- ZONA TPI (tono grupal) ---
+    # -------------------------------------------------------------------------
+    # ZONA TPI — grupal (sin {atleta}, impersonal)
+    # -------------------------------------------------------------------------
     'tpi_rojo_grupal': [
-        "El plan existía. Los minutos, menos. {atleta} tiene una conversación pendiente con su agenda.",
-        "Adherencia baja para {atleta} esta semana. El plan es una intención, el registro es la realidad.",
-        "{atleta} cumplió una parte del plan. La otra parte queda pendiente para la próxima semana.",
-        "TPI en zona roja para {atleta}. No es el fin del mundo, pero sí una señal clara.",
-        "El plan de {atleta} y su semana real tuvieron poco contacto. Hay margen de mejora evidente.",
-        "Cumplimiento bajo esta semana para {atleta}. La planificación vale lo que se ejecuta.",
+        "El plan existía. Los minutos, menos. Queda una conversación pendiente con la agenda.",
+        "Adherencia baja esta semana. El plan es una intención, el registro es la realidad.",
+        "Cumplió una parte del plan. La otra parte queda pendiente para la próxima semana.",
+        "TPI en zona roja. No es el fin del mundo, pero sí una señal clara.",
+        "El plan y la semana real tuvieron poco contacto. Hay margen de mejora evidente.",
+        "Cumplimiento bajo esta semana. La planificación vale lo que se ejecuta.",
     ],
     'tpi_amarillo_grupal': [
-        "{atleta} cumplió una buena parte del plan. Faltó poco para llegar a la zona verde.",
-        "Adherencia razonable de {atleta}. El trabajo estuvo, aunque no al 100% de lo planificado.",
-        "{atleta} en zona amarilla. Bien encaminado, con espacio para ajustar la próxima semana.",
-        "Cerca del objetivo de cumplimiento. {atleta} tiene el motor encendido, le falta un poco de bencina.",
-        "Semana de buena adherencia para {atleta}, sin ser perfecta. Eso también es parte del proceso.",
-        "{atleta} rozó la zona verde. Un pequeño ajuste la próxima semana puede marcar la diferencia.",
+        "Cumplió una buena parte del plan. Faltó poco para llegar a la zona verde.",
+        "Adherencia razonable. El trabajo estuvo, aunque no al 100% de lo planificado.",
+        "En zona amarilla de TPI. Bien encaminado, con espacio para ajustar la próxima semana.",
+        "Cerca del objetivo de cumplimiento. El motor está encendido, falta un poco de bencina.",
+        "Buena adherencia, sin ser perfecta. Eso también es parte del proceso.",
+        "Rozó la zona verde. Un pequeño ajuste la próxima semana puede marcar la diferencia.",
     ],
     'tpi_verde_grupal': [
-        "{atleta} ejecutó el plan con precisión. Eso no es suerte, es disciplina.",
-        "Zona verde de adherencia para {atleta}. El plan se respetó y los números lo demuestran.",
-        "Cumplimiento ejemplar de {atleta}. Cuando el plan y la ejecución coinciden, el progreso es inevitable.",
-        "{atleta} clavó el plan esta semana. Referente de adherencia para el club.",
-        "TPI en verde para {atleta}. Planificó bien y ejecutó mejor. Así se hace.",
-        "Adherencia total de {atleta}. El equipo técnico tiene poco que corregir esta semana.",
+        "Ejecutó el plan con precisión. Eso no es suerte, es disciplina.",
+        "Zona verde de adherencia. El plan se respetó y los números lo demuestran.",
+        "Cumplimiento ejemplar. Cuando el plan y la ejecución coinciden, el progreso es inevitable.",
+        "Clavó el plan esta semana. Referente de adherencia para el club.",
+        "TPI en verde. Planificó bien y ejecutó mejor. Así se hace.",
+        "Adherencia total. El equipo técnico tiene poco que corregir esta semana.",
     ],
 
-    # --- ZONA TPI (tono individual) ---
+    # -------------------------------------------------------------------------
+    # ZONA TPI — individual (segunda persona, sin {atleta})
+    # -------------------------------------------------------------------------
     'tpi_rojo_individual': [
         "Tu adherencia al plan estuvo baja esta semana. El plan es una hoja de ruta, no una sugerencia.",
         "TPI en zona roja. Hubo una brecha importante entre lo planificado y lo ejecutado.",
-        "Esta semana el plan y tu semana real no se encontraron mucho. La próxima es la oportunidad.",
+        "Esta semana el plan y tu ejecución no se encontraron mucho. La próxima es la oportunidad.",
         "Cumplimiento bajo. ¿Qué pasó esta semana? Vale la pena revisarlo antes de la siguiente.",
         "Tu adherencia necesita atención. El plan existe por una razón, y esta semana quedó corto.",
     ],
@@ -430,13 +443,15 @@ FRASES = {
         "Ejecutaste el plan con precisión. Eso no es casualidad, es disciplina sostenida.",
     ],
 
-    # --- CONTEXTO DISCIPLINAS (grupal) ---
+    # -------------------------------------------------------------------------
+    # CONTEXTO DISCIPLINAS — grupal (sin {atleta}, impersonal)
+    # -------------------------------------------------------------------------
     'completo_grupal': [
-        "{atleta} tocó el agua, los pedales y el asfalto. Triatleta completo en toda la extensión de la palabra.",
-        "Las tres disciplinas registradas para {atleta}. Eso es lo que diferencia a un triatleta de un deportista de una sola disciplina.",
-        "{atleta} no dejó ningún frente abandonado esta semana. Natación, ciclismo y trote, todos presentes.",
-        "Semana completa para {atleta}. Tres disciplinas, tres registros, cero excusas.",
-        "{atleta} cumplió el requisito fundamental: las tres disciplinas activas. El resto son detalles.",
+        "Tocó el agua, los pedales y el asfalto. Triatleta completo en toda la extensión de la palabra.",
+        "Las tres disciplinas registradas. Eso es lo que diferencia a un triatleta de un especialista.",
+        "Ningún frente abandonado esta semana. Natación, ciclismo y trote, todos presentes.",
+        "Semana completa. Tres disciplinas, tres registros, cero excusas.",
+        "Cumplió el requisito fundamental: las tres disciplinas activas. El resto son detalles.",
     ],
     'completo_individual': [
         "Tres disciplinas registradas. Eso es exactamente lo que define a un triatleta.",
@@ -446,59 +461,65 @@ FRASES = {
         "Tres de tres. Así se construye la base para competir en las tres disciplinas.",
     ],
     'incompleto_grupal': [
-        "{atleta} dejó {faltantes} fuera del registro esta semana. El triatlón tiene tres partes, no dos.",
-        "Faltó {faltantes} en la semana de {atleta}. Una disciplina ausente es una debilidad que se acumula.",
-        "{atleta} entrenó bien, pero {faltantes} quedó en el tintero. La próxima semana, que no falte.",
-        "Semana incompleta para {atleta}. {faltantes} no aparece en el registro y eso tiene un costo.",
-        "{atleta} y {faltantes} no se vieron esta semana. Habrá que reencontrarse pronto.",
+        "Dejó {faltantes} fuera del registro. El triatlón tiene tres partes, no dos.",
+        "Faltó {faltantes} en la semana. Una disciplina ausente es una debilidad que se acumula.",
+        "Buen trabajo general, pero {faltantes} quedó en el tintero. La próxima semana, que no falte.",
+        "Semana incompleta. {faltantes} no aparece en el registro y eso tiene un costo.",
+        "{faltantes} ausente esta semana. Habrá que reencontrarse con esa disciplina pronto.",
     ],
     'incompleto_individual': [
         "Esta semana te faltó {faltantes}. El triatlón no perdona las disciplinas abandonadas.",
-        "Faltó {faltantes} en tu registro. Una semana sin esa disciplina es una semana de ventaja para quienes sí la hicieron.",
+        "Faltó {faltantes} en tu registro. Una semana sin esa disciplina es ventaja para quienes sí la hicieron.",
         "Tu registro quedó incompleto: {faltantes} no aparece esta semana. Ojo con eso.",
         "Sin {faltantes} esta semana. La próxima, que no falte ninguna disciplina.",
-        "{faltantes} ausente en tu semana. Recuerda que el triatlón cobra las tres disciplinas el día de la carrera.",
+        "{faltantes} ausente en tu semana. El triatlón cobra las tres disciplinas el día de la carrera.",
     ],
     'sin_actividad_grupal': [
-        "{atleta} no registró actividad esta semana. Descanso, viaje o contratiempo, la próxima semana cuenta.",
-        "Semana en blanco para {atleta}. El cuerpo a veces necesita parar, pero el plan no espera.",
-        "{atleta} no apareció en el registro esta semana. Esperamos verlo de vuelta pronto.",
+        "Sin actividad registrada esta semana. Descanso, viaje o contratiempo, la próxima semana cuenta.",
+        "Semana en blanco. El cuerpo a veces necesita parar, pero el plan no espera.",
+        "No apareció en el registro esta semana. Esperamos verlo de vuelta pronto.",
     ],
     'sin_actividad_individual': [
         "Sin actividad registrada esta semana. La próxima semana es la oportunidad de retomar.",
-        "No hubo registro esta semana. Pase lo que haya pasado, la siguiente semana empieza desde cero.",
+        "No hubo registro esta semana. Pase lo que haya pasado, la siguiente empieza desde cero.",
         "Semana en blanco en tu historial. El plan sigue esperando, sin juzgar.",
     ],
 
-    # --- DISCIPLINAS ESPECÍFICAS (grupal) ---
+    # -------------------------------------------------------------------------
+    # DISCIPLINAS ESPECÍFICAS — grupal (sin {atleta}, solo {tiempo})
+    # -------------------------------------------------------------------------
     'natacion_grupal': [
-        "{atleta} sumó {tiempo} en la piscina. El agua no miente y este registro lo confirma.",
-        "Volumen de natación sólido para {atleta}: {tiempo}. La base acuática se construye con semanas así.",
-        "{atleta} y la piscina tuvieron una buena semana juntos: {tiempo} de trabajo acuático.",
-        "{tiempo} de natación para {atleta}. Cada largo suma a la base aeróbica que se necesita en carrera.",
-        "Registro acuático de {atleta}: {tiempo}. La piscina es donde se gana el tiempo en el segmento más técnico.",
-        "{atleta} acumuló {tiempo} en el agua. Eso es fondo, técnica y resistencia en un solo número.",
+        "En natación sumó {tiempo}. El agua no miente y este registro lo confirma.",
+        "Volumen acuático sólido: {tiempo} en piscina. La base aeróbica se construye con semanas así.",
+        "En la piscina registró {tiempo} de trabajo técnico. La apertura del triatlón bien cubierta.",
+        "{tiempo} de natación acumulados. Cada largo suma a la base que se necesita en carrera.",
+        "Registro acuático de {tiempo}. La piscina es donde se gana el tiempo en el segmento más técnico.",
+        "Fondo en el agua: {tiempo} de nado de calidad esta semana.",
     ],
     'ciclismo_grupal': [
-        "{atleta} puso {tiempo} sobre los pedales esta semana. El segmento más largo del triatlón bien cubierto.",
-        "{tiempo} de ciclismo para {atleta}. Las piernas tienen memoria y este volumen les habla.",
-        "{atleta} y la bicicleta: {tiempo} juntos esta semana. El motor aeróbico agradece cada pedalada.",
-        "Rodaje de {tiempo} para {atleta}. En ciclismo, el volumen es la base de todo lo demás.",
-        "{atleta} acumuló {tiempo} en bicicleta. Eso es inversión directa en el segmento más largo de la carrera.",
-        "{tiempo} de pedaleo para {atleta}. Las watts no se improvisan, se construyen semana a semana.",
+        "Sobre los pedales acumuló {tiempo}. El segmento más largo del triatlón bien trabajado.",
+        "Rodaje de {tiempo} esta semana. Las piernas tienen memoria y este volumen les habla.",
+        "En bicicleta registró {tiempo}. El motor aeróbico agradece cada pedalada.",
+        "{tiempo} de ciclismo en el registro. En ruta, el volumen es la base de todo lo demás.",
+        "Pedaleo de {tiempo} netos. Las watts no se improvisan, se construyen semana a semana.",
+        "Volumen de ciclismo: {tiempo}. Inversión directa en el segmento más largo de la carrera.",
     ],
     'trote_grupal': [
-        "{atleta} cerró con {tiempo} de trote. La carrera a pie es donde se define el triatlón y este volumen lo sabe.",
-        "{tiempo} de running para {atleta}. El asfalto tiene sus propias reglas y {atleta} las respeta.",
-        "{atleta} sumó {tiempo} de trote esta semana. Las piernas cansadas de la bici necesitan este trabajo.",
-        "Registro de carrera a pie de {atleta}: {tiempo}. El último segmento se gana entrenando este volumen.",
-        "{tiempo} de zancada para {atleta}. El trote es donde muchos triatletas pierden o ganan la carrera.",
-        "{atleta} y el asfalto: {tiempo} esta semana. Consistencia en running es consistencia en resultados.",
+        "En trote cerró con {tiempo}. La carrera a pie es donde se define el triatlón.",
+        "Running de {tiempo} esta semana. El asfalto tiene sus propias reglas y las respetó.",
+        "Sumó {tiempo} de trote. Las piernas cansadas de la bici necesitan este trabajo.",
+        "Registro de carrera a pie: {tiempo}. El último segmento se gana entrenando este volumen.",
+        "{tiempo} de zancada en el asfalto. Aquí es donde muchos triatlones se ganan o se pierden.",
+        "Volumen de trote: {tiempo}. Consistencia en running es consistencia en resultados.",
     ],
+
+    # -------------------------------------------------------------------------
+    # DISCIPLINAS ESPECÍFICAS — individual (segunda persona, sin {atleta})
+    # -------------------------------------------------------------------------
     'natacion_individual': [
         "Sumaste {tiempo} en la piscina. El agua es el segmento más técnico y este volumen construye base.",
         "{tiempo} de natación en tu registro. Cada sesión en el agua mejora algo que no se ve en la bici ni en el trote.",
-        "Tu volumen acuático esta semana: {tiempo}. La piscina te devuelve lo que le das, sin excepciones.",
+        "Tu volumen acuático esta semana: {tiempo}. La piscina te devuelve lo que le das.",
         "{tiempo} en el agua. Eso es técnica, resistencia y confianza para el segmento de apertura.",
         "Natación: {tiempo} esta semana. El primer segmento del triatlón se gana aquí, en el entrenamiento.",
     ],
@@ -506,8 +527,8 @@ FRASES = {
         "{tiempo} sobre los pedales esta semana. El segmento más largo del triatlón bien trabajado.",
         "Tu volumen de ciclismo: {tiempo}. Las piernas tienen memoria y este trabajo suma.",
         "{tiempo} de rodaje en tu registro. La bicicleta es donde se construye el motor aeróbico.",
-        "Ciclismo: {tiempo} esta semana. Ese volumen se traduce directamente en capacidad para el resto del recorrido.",
-        "{tiempo} de pedaleo. En el triatlón, la bici es el segmento que más tiempo consume y más base requiere.",
+        "Ciclismo: {tiempo} esta semana. Ese volumen se traduce en capacidad para el resto del recorrido.",
+        "{tiempo} de pedaleo. En el triatlón, la bici es el segmento que más base requiere.",
     ],
     'trote_individual': [
         "{tiempo} de trote en tu registro. La carrera a pie es donde el triatlón se decide.",
@@ -526,8 +547,10 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion,
                        diff_hist_mins=None, destino='grupal'):
     """
     Motor contextual Nivel 2.
-    Genera comentarios según estado del atleta, zona TPI, 
-    contexto de disciplinas y destino del reporte.
+    - ESTADO: abre siempre con {atleta} en grupal, segunda persona en individual.
+    - TPI: impersonal en grupal, segunda persona en individual. Sin {atleta}.
+    - DISCIPLINAS: impersonal en grupal, segunda persona en individual. Sin {atleta}.
+    - El nombre del atleta aparece exactamente UNA vez por comentario.
     """
     atleta = str(datos_de_fila.get('Deportista', 'Atleta TYM'))
     tpi_global = datos_de_fila.get('TPI_Global', 0)
@@ -535,7 +558,6 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion,
     mins_b = datos_de_fila.get('B_Mins_Real', 0)
     mins_r = datos_de_fila.get('R_Mins_Real', 0)
 
-    # Tiempo formateado según disciplina
     if nombre_categoria == 'Natación':
         tiempo = to_hhmm_display(mins_n)
     elif nombre_categoria == 'Bicicleta':
@@ -545,7 +567,6 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion,
     else:
         tiempo = to_hhmm_display(datos_de_fila.get('T_Mins_Real', 0))
 
-    # Clasificadores
     estado = clasificar_estado(diff_hist_mins)
     zona = clasificar_zona_tpi(tpi_global)
     contexto_disc, faltantes = clasificar_contexto_disciplinas(mins_n, mins_b, mins_r)
@@ -553,52 +574,51 @@ def generar_comentario(datos_de_fila, nombre_categoria, rank_posicion,
 
     comentarios = []
 
-    # --- BLOQUE 1: ESTADO DEL ATLETA ---
+    # BLOQUE 1: ESTADO — inyecta {atleta} solo aquí (grupal) o usa 2ª persona (individual)
     clave_estado = f'estado_{estado}_{destino}'
     pool_estado = FRASES.get(clave_estado, FRASES.get(f'estado_{estado}_grupal', []))
     if pool_estado:
         frase = obtener_frase_base(clave_estado, pool_estado)
         comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
 
-    # --- BLOQUE 2: ZONA TPI ---
+    # BLOQUE 2: TPI — NO reemplaza {atleta} porque las frases no lo contienen
     clave_tpi = f'tpi_{zona}_{destino}'
     pool_tpi = FRASES.get(clave_tpi, FRASES.get(f'tpi_{zona}_grupal', []))
     if pool_tpi:
         frase = obtener_frase_base(clave_tpi, pool_tpi)
-        comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
+        comentarios.append(frase.replace('{tiempo}', tiempo))
 
-    # --- BLOQUE 3: CONTEXTO DISCIPLINAS ---
+    # BLOQUE 3: DISCIPLINAS — NO reemplaza {atleta}, solo {faltantes}
     clave_disc = f'{contexto_disc}_{destino}'
     pool_disc = FRASES.get(clave_disc, FRASES.get(f'{contexto_disc}_grupal', []))
     if pool_disc:
         frase = obtener_frase_base(clave_disc, pool_disc)
         comentarios.append(
-            frase.replace('{atleta}', atleta)
-                 .replace('{tiempo}', tiempo)
+            frase.replace('{tiempo}', tiempo)
                  .replace('{faltantes}', faltantes_str)
         )
 
-    # --- BLOQUE 4: DISCIPLINA ESPECÍFICA (si aplica) ---
+    # BLOQUE 4: DISCIPLINA ESPECÍFICA — solo {tiempo}, sin {atleta}
     mapa_disc = {
-        'Natación': f'natacion_{destino}',
+        'Natación':  f'natacion_{destino}',
         'Bicicleta': f'ciclismo_{destino}',
-        'Trote': f'trote_{destino}'
+        'Trote':     f'trote_{destino}'
     }
     if nombre_categoria in mapa_disc:
         clave_especifica = mapa_disc[nombre_categoria]
         pool_esp = FRASES.get(clave_especifica, [])
         if pool_esp:
             frase = obtener_frase_base(clave_especifica, pool_esp)
-            comentarios.append(frase.replace('{atleta}', atleta).replace('{tiempo}', tiempo))
+            comentarios.append(frase.replace('{tiempo}', tiempo))
 
-    # Unir los bloques en un párrafo coherente
     comentario_final = ' '.join(comentarios)
 
-    # Bonus de liderazgo para el 1° lugar
     if rank_posicion == 1 and destino == 'grupal':
         comentario_final = f"🏆 {comentario_final}"
 
     return comentario_final if comentario_final.strip() else f"{atleta} registró actividad esta semana."
+
+
     
 # *****************************************************************************
 # SECCIÓN 4: MOTOR DE CÁLCULO DE ADHERENCIA (TPI - REGLA 4.3)
