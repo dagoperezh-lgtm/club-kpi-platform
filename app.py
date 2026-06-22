@@ -1398,7 +1398,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
     doc_grupal.add_page_break() 
 
     # --- PÁGINAS 4 a 7: TOP 15 POR TIEMPO Y DISCIPLINAS ---
-    # PUNTO 2: bloques_tops ahora incluye hoja_hist para calcular diff por disciplina
+    # PUNTO 2: bloques_tops ahora incluye hoja_hist como 4ª columna
     bloques_tops = [
         ("⏱️ 5. TOP 15 TIEMPO TOTAL", 'T_Mins_Real', 'General',   'TIEMPO TOTAL'),
         ("🏊‍♂️ 6. TOP 15 NATACIÓN",   'N_Mins_Real', 'Natación',  'NATACION'),
@@ -1582,7 +1582,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 # --- BLOQUE 3: EVALUACIÓN TÉCNICA (MOTOR NARRATIVO NIVEL 2) ---
                 doc_i.add_heading("Evaluación Técnica", level=2)
 
-                # PUNTO 6: diff_hist del tiempo total para el comentario general
+                # PUNTO 6: diff_hist tiempo total para comentario general en 2ª persona
                 mk = row_atleta['MatchKey']
                 diff_total = calcular_diff_hist(row_atleta, mk, 'TIEMPO TOTAL', 'T_Mins_Real')
                 comentario_general = generar_comentario(
@@ -1592,8 +1592,7 @@ def generar_entregables_separados(df_semanal_procesado, dict_maestro_actualizado
                 )
                 doc_i.add_paragraph(comentario_general)
 
-                # PUNTO 6: Comentario específico por cada disciplina activa
-                # con diff_hist calculado para esa disciplina en particular
+                # PUNTO 6: Comentario por cada disciplina activa con diff propio
                 disc_ficha = [
                     ('Natación',  'N_Mins_Real', 'NATACION'),
                     ('Bicicleta', 'B_Mins_Real', 'BICICLETA'),
