@@ -85,7 +85,7 @@ atleta_matchkey = st.query_params.get("state")
 if not codigo_auth:
     st.info("Paso 1: Identifícate en el sistema")
     # El atleta escribe su nombre tal cual aparece en tu Excel Maestro
-    nombre_atleta = st.text_input("Ingresa tu Nombre y Apellido (Ej: Tomas Galmez)")
+    nombre_atleta = st.text_input("Ingresa tu Nombre y Apellido, tal como aparecen registrados en la planilla del Club")
     
     if nombre_atleta:
         # En el enlace, pegamos su nombre en el parámetro "state" para no perderlo
