@@ -8,7 +8,7 @@ st.set_page_config(page_title="Piloto Strava Lite", layout="centered")
 # 1. TUS CREDENCIALES (Reemplaza con tus datos reales)
 # =====================================================================
 CLIENT_ID = "162131"       # Ejemplo: "123456"
-CLIENT_SECRET = "f827c4de29d7334330b43fdd04a99d900df566c2"   # Ejemplo: "abc123def..."
+CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
 
 # =====================================================================
 # 2. TU URL PÚBLICA DE STREAMLIT (Debe llevar https:// y terminar en /)
