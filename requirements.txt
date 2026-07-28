@@ -6,3 +6,5 @@ python-docx
 plotly
 openpyxl
 xlsxwriter
+gspread
+google-auth
